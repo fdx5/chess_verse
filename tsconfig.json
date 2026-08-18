@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/chess-core" },
+    { "path": "packages/protocol" },
+    { "path": "packages/client" },
+    { "path": "packages/server" }
+  ]
+}
