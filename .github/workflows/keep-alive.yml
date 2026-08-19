@@ -1,0 +1,24 @@
+name: Keep Render service warm
+
+# 사용자 요청 — Render 무료 플랜은 15분간 요청이 없으면 서비스가 슬립되고, 다음 요청 시
+# 콜드스타트(수십 초)가 걸린다. 10분마다 배포된 URL을 핑해서 슬립을 방지한다.
+# 외부 크론 서비스 가입 없이 이 저장소의 GitHub Actions만으로 동작한다.
+#
+# 참고: GitHub Actions 스케줄 크론은 "정확히 10분마다"를 보장하지 않고 부하에 따라 지연될 수 있다
+# (공식 문서 명시 — best-effort). 그래도 Render의 15분 슬립 임계값보다 훨씬 촘촘하므로 실질적으로는
+# 충분하다. 저장소에 60일간 커밋이 없으면 GitHub가 스케줄 워크플로를 자동 비활성화한다.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping deployed service
+        run: |
+          curl -fsS --max-time 25 https://3dchess.onrender.com/ \
+            && echo "OK — service responded" \
+            || echo "ping failed (cold start in progress, or service down) — not treated as a workflow failure"

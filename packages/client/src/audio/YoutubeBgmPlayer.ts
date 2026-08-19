@@ -71,15 +71,22 @@ export class YoutubeBgmPlayer {
   private readonly listeners = new Set<(playing: boolean) => void>();
 
   constructor(container: HTMLElement) {
-    // 사용자 요청 — 좌측 하단에 보이던 유튜브 썸네일/플레이어 박스를 화면 밖으로 옮겨 안 보이게 한다.
-    // `display:none`은 일부 브라우저에서 백그라운드 재생이 막히는 사례가 있어, 대신 뷰포트 밖(-9999px)으로
-    // 밀어내는 방식을 쓴다 — 크기는 그대로 유지해 재생기 자체는 정상 동작한다.
+    // iOS 버그 수정 — 뷰포트 밖(-9999px)으로 완전히 밀어내면 iOS Safari/WebKit이 "화면 밖 = 백그라운드"로
+    // 취급해 재생 자체를 막거나 중간에 멈추는 사례가 있다. 대신 뷰포트 안에 두되 2×2px로 줄이고
+    // opacity:0으로 안 보이게 한다 — 화면에는 안 보이지만 WebKit 기준으로는 여전히 "화면 안"이라 재생이
+    // 안정적이다.
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = ['position:fixed', 'left:-9999px', 'top:-9999px', 'width:160px', 'height:90px', 'pointer-events:none'].join(';');
+    wrapper.style.cssText = ['position:fixed', 'right:0', 'bottom:0', 'width:2px', 'height:2px', 'opacity:0', 'overflow:hidden', 'pointer-events:none'].join(';');
     this.mountEl = document.createElement('div');
     this.mountEl.id = `bcr-bgm-player-${Math.random().toString(36).slice(2, 8)}`;
     wrapper.appendChild(this.mountEl);
     container.appendChild(wrapper);
+
+    // iOS 버그 수정 — 유튜브 IFrame API 로드+플레이어 생성은 스크립트 네트워크 왕복을 포함해 수백ms~수초
+    // 걸릴 수 있는데, 그 시간 동안 사용자 제스처(클릭) 컨텍스트가 끊겨 iOS Safari가 재생을 거부한다.
+    // 그래서 부팅 시점에 미리(자동재생 없이, autoplay:0) 플레이어를 준비해둬서, 실제 클릭 시점엔
+    // `playVideo()`만 곧바로 호출하면 되게 한다(제스처 체인이 끊기지 않음).
+    void this.ensurePlayer();
   }
 
   /** 재생 상태가 바뀔 때마다 호출된다(시작화면/인게임 버튼이 같은 상태를 함께 반영하도록). */
@@ -107,7 +114,9 @@ export class YoutubeBgmPlayer {
             height: '90',
             width: '160',
             videoId: trackIdAt(this.trackIndex),
-            playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0 },
+            // playsinline — iOS 버그 수정: 이게 없으면 iOS Safari가 재생을 전체화면으로 강제 전환하려
+            // 하거나 인라인(백그라운드) 오디오 재생 자체를 거부한다.
+            playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
             events: {
               onReady: () => {
                 this.player = player;
@@ -129,6 +138,17 @@ export class YoutubeBgmPlayer {
   /** 이미 재생 중이면 아무것도 하지 않는다 — 대국 시작처럼 "켜져 있기만 하면 되는" 지점에서 쓴다.
    * 반드시 사용자 클릭(예: 시작 버튼)에서 이어지는 호출 체인 안에서만 호출한다(자동재생 정책 대응). */
   async play(): Promise<void> {
+    if (this.playing) return;
+    // iOS 버그 수정 — 플레이어가 이미 준비돼 있으면(생성자에서 미리 로드해둔 덕분에 대부분 이 경우다)
+    // await 없이 즉시 동기적으로 playVideo()를 호출한다. await를 한 번이라도 거치면(이미 resolve된
+    // Promise라도) 마이크로태스크 한 틱이 끼어드는데, iOS Safari는 그 정도로도 "사용자 제스처 체인이
+    // 끊겼다"고 판단해 재생을 거부하는 경우가 있다.
+    if (this.player !== null) {
+      this.player.playVideo();
+      this.playing = true;
+      this.notify();
+      return;
+    }
     const player = await this.ensurePlayer();
     if (this.playing) return;
     player.playVideo();
@@ -138,6 +158,18 @@ export class YoutubeBgmPlayer {
 
   /** 반드시 버튼 클릭 핸들러 안에서만 호출한다(브라우저 자동재생 정책 대응). */
   async toggle(): Promise<void> {
+    // iOS 버그 수정 — play()와 동일한 이유로 이미 준비된 플레이어는 await 없이 동기 호출한다.
+    if (this.player !== null) {
+      if (this.playing) {
+        this.player.pauseVideo();
+        this.playing = false;
+      } else {
+        this.player.playVideo();
+        this.playing = true;
+      }
+      this.notify();
+      return;
+    }
     const player = await this.ensurePlayer();
     if (this.playing) {
       player.pauseVideo();

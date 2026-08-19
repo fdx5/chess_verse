@@ -11,7 +11,20 @@
 
     <style>
       html, body { margin: 0; padding: 0; height: 100%; background: #1a140d; }
-      #app { width: 100vw; height: 100vh; overflow: hidden; }
+      /*
+        iOS Safari 버그 수정 — 주소창(동적 툴바)이 보였다 숨었다 할 때 100vh는 그 변화를 못 따라가서
+        게임 상단이 주소창 뒤로 밀려 들어가 가려 보였다. 100dvh(동적 뷰포트 높이)는 실제 보이는
+        영역을 따라 자동으로 갱신되므로 이 문제가 사라진다. 구형 브라우저는 dvh를 모르면 값 자체를
+        무시하므로 위의 100vh가 폴백으로 그대로 유지된다.
+      */
+      #app {
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        padding-top: env(safe-area-inset-top);
+        box-sizing: border-box;
+      }
     </style>
   </head>
   <body>
