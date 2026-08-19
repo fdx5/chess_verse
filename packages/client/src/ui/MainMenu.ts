@@ -327,7 +327,12 @@ export class MainMenu {
     });
     btn.addEventListener('mousedown', () => (btn.style.transform = 'translateY(0) scale(0.98)'));
     btn.addEventListener('mouseup', () => (btn.style.transform = 'translateY(-2px) scale(1)'));
-    btn.addEventListener('click', onClick);
+    btn.addEventListener('click', (ev) => {
+      // 사용자 요청 §게임 시작 사운드 — 이 버튼은 전용 효과음(game_start.mp3, main.ts에서 재생)을 쓰므로,
+      // 앱 전역 버튼 클릭 델리게이트(sfx.ui.button)와 겹쳐 들리지 않게 버블링을 막는다.
+      ev.stopPropagation();
+      onClick();
+    });
     return btn;
   }
 

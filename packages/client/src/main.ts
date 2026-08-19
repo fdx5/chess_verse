@@ -224,7 +224,7 @@ function bindSessionEvents(session: GameSession, config: MatchConfig): void {
         void maybeTriggerCpuMove(session, config);
       });
     } else {
-      soundRegistry.play('sfx.move.walk');
+      soundRegistry.playWalk();
       unitBoard.applyMove(move, prevPosition);
     }
     scheduler.markDirty();
@@ -427,7 +427,7 @@ function bindOnlineSessionEvents(session: GameSession): void {
         scheduler.markDirty();
       });
     } else {
-      soundRegistry.play('sfx.move.walk');
+      soundRegistry.playWalk();
       unitBoard.applyMove(move, prevPosition);
     }
     scheduler.markDirty();
@@ -583,6 +583,7 @@ function startOnlineMatch(config: MatchConfig): void {
 }
 
 function handleStartFromMenu(config: MatchConfig): void {
+  soundRegistry.play('sfx.ui.game_start'); // 사용자 요청 §게임 시작 사운드
   void bgmPlayer.play(); // 게임 화면 진입 시 BGM 기본 자동재생(메인 메뉴에서는 재생하지 않음) — "시작" 클릭이 사용자 제스처 기준점.
   if (config.source === 'online') startOnlineMatch(config);
   else startMatch(config);
@@ -751,6 +752,7 @@ function renderFrame(dtSeconds: number): void {
   unitBoard.update(dtSeconds);
   if (unitBoard.isAnimating()) scheduler.markDirty();
   else if (wasAnimating) {
+    soundRegistry.stopWalk();
     inputLocked = false;
     refreshTurnStatusText();
     // 캡처가 아닌 일반 이동은 combatDirector를 거치지 않고 여기서 애니메이션이 끝나므로,
