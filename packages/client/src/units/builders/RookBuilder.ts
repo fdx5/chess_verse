@@ -14,11 +14,15 @@ import { makeBone, attachPart, collectBones, cylinderGeom, latheGeom, roundedBox
  */
 export function buildRook(color: Color, _quality: QualityTier, geometryCache: GeometryCache, materialCache: MaterialCache): UnitInstance {
   const tint = color === 'w' ? '#D4AF37' : '#C8CDD3';
+  // 사용자 요청 — 이전엔 흑/백 둘 다 같은 밝은 회색 돌(진영 구분은 미세한 emissive 틴트뿐)이라
+  // 흑 룩이 충분히 어두워 보이지 않았다. 흑진영은 돌 자체 색을 짙은 현무암 톤으로 낮춘다.
+  const stoneColor = color === 'w' ? '#8A8478' : '#332F29';
+  const stoneRingColor = color === 'w' ? '#726C60' : '#252220';
   const stone = materialCache.getOrCreate(
     `rook.stone.${color}`,
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#8A8478',
+        color: stoneColor,
         roughness: 0.85,
         metalness: 0.08,
         clearcoat: 0.15,
@@ -31,7 +35,7 @@ export function buildRook(color: Color, _quality: QualityTier, geometryCache: Ge
     `rook.stoneRing.${color}`,
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: '#726C60',
+        color: stoneRingColor,
         roughness: 0.8,
         metalness: 0.08,
         clearcoat: 0.15,

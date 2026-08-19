@@ -49,6 +49,27 @@ const ROOK_CRUSH_HOLD_SEC = 0.12;
 const QUEEN_WINDUP_SEC = 0.16;
 const QUEEN_STRIKE_SEC = 0.14;
 const QUEEN_SHATTER_RELAX_SEC = 0.4;
+const KING_WINDUP_SEC = 0.18;
+const KING_STRIKE_SEC = 0.14;
+const KING_SHATTER_RELAX_SEC = 0.4;
+
+// 사용자 요청 §게임 내 사운드 — 공격자 타입별 전투 연출 효과음(mp3 샘플, `SoundRegistry` 참조).
+const FINISHER_SFX_CUE: Record<PieceType, string> = {
+  p: 'sfx.combat.pawn',
+  n: 'sfx.combat.knight',
+  b: 'sfx.combat.bishop',
+  r: 'sfx.combat.rook',
+  q: 'sfx.combat.queen',
+  k: 'sfx.combat.king',
+};
+
+/** Queen/King 파쇄 연출의 파편 하나 — 원본 위치(origin)에서 driftDir 방향으로 날아가며 텀블링한다. */
+interface ShatterFragment {
+  holder: THREE.Object3D;
+  origin: THREE.Vector3;
+  driftDir: THREE.Vector3;
+  rotSpeed: readonly [number, number];
+}
 
 function clamp01(x: number): number {
   return Math.min(1, Math.max(0, x));
@@ -95,8 +116,8 @@ interface ActiveCombat {
   bishopChannelFired: boolean;
   bishopBoltFired: boolean;
   rookCrushFired: boolean;
-  queenShatterHolder: THREE.Object3D | null;
-  queenShatterOrigin: THREE.Vector3 | null;
+  // Queen(1개: 상체)/King(3개: 머리+몸통 복제 2) 파쇄 연출에서 씬에 직접 추가한 파편들.
+  shatterFragments: ShatterFragment[];
 }
 
 /**
@@ -140,7 +161,7 @@ export class CombatDirector {
     const scene = this.animationRegistry.getCombatScene(attackerPiece.type, defenderPiece.type);
 
     if (this.pacing === 'off') {
-      this.finalize(move.from, move.to, defenderSquare, null);
+      this.finalize(move.from, move.to, defenderSquare, []);
       return Promise.resolve();
     }
 
@@ -188,8 +209,7 @@ export class CombatDirector {
         bishopChannelFired: false,
         bishopBoltFired: false,
         rookCrushFired: false,
-        queenShatterHolder: null,
-        queenShatterOrigin: null,
+        shatterFragments: [],
       };
     });
   }
@@ -198,7 +218,7 @@ export class CombatDirector {
   requestSkip(): void {
     const active = this.active;
     if (active === null) return;
-    this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.queenShatterHolder);
+    this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.shatterFragments);
     this.cameraRig.beginRestore();
     this.cameraRig.updateRestore(999); // 강제로 1프레임 만에 복귀 완료시킴(즉시 컷)
     this.active = null;
@@ -256,7 +276,7 @@ export class CombatDirector {
     this.cameraRig.update(t, active.scene.camera, new THREE.Vector3(dx, 0.5, dz));
 
     if (t >= 1) {
-      this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.queenShatterHolder);
+      this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.shatterFragments);
       this.cameraRig.beginRestore();
       active.phase = 'restoring';
     }
@@ -284,6 +304,9 @@ export class CombatDirector {
         return;
       case 'q':
         this.runQueenFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      case 'k':
+        this.runKingFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
         return;
       default:
         this.runGenericFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
@@ -439,7 +462,7 @@ export class CombatDirector {
     if (!active.bishopBoltFired && finisherT > strikeEnd) {
       active.bishopBoltFired = true;
       const [defX, defZ] = active.defenderWorld;
-      this.spawnLightningBolt(new THREE.Vector3(defX, 2.0, defZ), new THREE.Vector3(defX, 0.55, defZ));
+      this.spawnLightningBolt(new THREE.Vector3(defX, 2.8, defZ), new THREE.Vector3(defX, 0.55, defZ));
       this.playThudOnce(active);
     }
 
@@ -540,53 +563,141 @@ export class CombatDirector {
     if (defenderUnit === undefined || finisherT <= strikeEnd) return;
 
     this.playThudOnce(active);
-    if (active.queenShatterHolder === null) {
+    if (active.shatterFragments.length === 0) {
       defenderUnit.mixer.stopAllAction();
       const chest = defenderUnit.bones['chest'];
       if (chest !== undefined) {
         const holder = detachSubtree(chest, this.scene);
-        active.queenShatterHolder = holder;
-        active.queenShatterOrigin = holder.position.clone();
+        active.shatterFragments.push({
+          holder,
+          origin: holder.position.clone(),
+          driftDir: new THREE.Vector3(active.toppleAxis.x, 0, active.toppleAxis.z),
+          rotSpeed: [7, 4.5],
+        });
       }
     }
 
     const shatterT = finisherT - strikeEnd;
-    const speed = 1.1;
-    const gravity = 2.6;
+    this.updateShatterFragments(active.shatterFragments, shatterT, 1.1, 2.6);
+
+    // 하체(hips/다리/드레스, 원본 유닛) — 상체와 반대 대각 방향으로 흩어진다.
+    const [defX, defZ] = active.defenderWorld;
     const driftX = active.toppleAxis.x;
     const driftZ = active.toppleAxis.z;
-
-    const holder = active.queenShatterHolder;
-    const origin = active.queenShatterOrigin;
-    if (holder !== null && origin !== null) {
-      holder.position.set(
-        origin.x + driftX * shatterT * speed,
-        Math.max(0.08, origin.y + shatterT * 0.9 - 0.5 * gravity * shatterT * shatterT),
-        origin.z + driftZ * shatterT * speed
-      );
-      holder.rotation.x = shatterT * 7;
-      holder.rotation.z = shatterT * 4.5;
-    }
-
-    // 하체(hips/다리/드레스) — 반대 대각 방향으로 흩어진다.
-    const [defX, defZ] = active.defenderWorld;
-    defenderUnit.root.position.set(defX - driftX * shatterT * speed * 0.7, Math.max(0, shatterT * 0.5 - 0.5 * gravity * shatterT * shatterT), defZ - driftZ * shatterT * speed * 0.7);
+    const gravity = 2.6;
+    defenderUnit.root.position.set(defX - driftX * shatterT * 1.1 * 0.7, Math.max(0, shatterT * 0.5 - 0.5 * gravity * shatterT * shatterT), defZ - driftZ * shatterT * 1.1 * 0.7);
     defenderUnit.root.rotation.x = -shatterT * 5;
     defenderUnit.root.rotation.z = shatterT * 3;
 
-    // 두 조각 다 서서히 작아지며 사라진다(사용자 요청 §씬 퀄리티 — 갑자기 팝업하듯 사라짐 완화).
-    const shrinkSec = SHRINK_SEC * pacingScale;
-    const totalRel = active.totalDuration - active.approachDuration;
-    const shrinkStart = Math.max(strikeEnd, totalRel - shrinkSec);
-    if (finisherT > shrinkStart) {
-      const shrinkT = clamp01((finisherT - shrinkStart) / Math.max(0.001, totalRel - shrinkStart));
-      const scale = 1 - easeInQuad(shrinkT) * 0.92;
-      defenderUnit.root.scale.setScalar(scale);
-      if (holder !== null) holder.scale.setScalar(scale);
+    // 모든 조각(상체 파편 + 원본 하체) 다 서서히 작아지며 사라진다(사용자 요청 §씬 퀄리티 — 갑자기
+    // 팝업하듯 사라짐 완화).
+    const shrinkStart = Math.max(strikeEnd, active.totalDuration - active.approachDuration - SHRINK_SEC * pacingScale);
+    this.applyShatterShrink(active, defenderUnit, finisherT, shrinkStart);
+  }
+
+  /**
+   * King — 검을 크게 휘둘러 적 기물을 정확히 네 조각(머리 1 + 몸통 복제 2 + 원본 하체 1)으로
+   * 흩날려 사라지게 한다(사용자 요청). 룩처럼 팔·다리가 없는 기물도 있어 골격 특정 부위에
+   * 의존하지 않고, 머리만 분리한 뒤 나머지 몸통을 두 번 복제해 서로 다른 방향으로 날려보낸다
+   * (지오메트리/재질은 캐시를 그대로 공유해 복제 비용이 거의 없다).
+   */
+  private runKingFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = KING_WINDUP_SEC * pacingScale;
+    const strikeSec = KING_STRIKE_SEC * pacingScale;
+    const windupEnd = windupSec;
+    const strikeEnd = windupEnd + strikeSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+
+    if (attackerUnit !== undefined) {
+      attackerUnit.root.position.set(clampedX, 0, clampedZ);
+      const shoulderR = attackerUnit.bones['shoulder.R'];
+      if (shoulderR !== undefined) {
+        if (finisherT <= windupEnd) {
+          const wT = easeOutQuad(clamp01(finisherT / windupSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(0, -2.3, wT);
+        } else if (finisherT <= strikeEnd) {
+          const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(-2.3, 1.0, sT);
+        } else {
+          const relaxT = easeOutQuad(clamp01((finisherT - strikeEnd) / KING_SHATTER_RELAX_SEC));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(1.0, 0.1, relaxT);
+        }
+      }
+    }
+
+    if (defenderUnit === undefined || finisherT <= strikeEnd) return;
+
+    this.playThudOnce(active);
+    if (active.shatterFragments.length === 0) {
+      defenderUnit.mixer.stopAllAction();
+      const head = defenderUnit.bones['head'];
+      if (head !== undefined) {
+        const holder = detachSubtree(head, this.scene);
+        active.shatterFragments.push({ holder, origin: holder.position.clone(), driftDir: new THREE.Vector3(0.65, 0, 0.75).normalize(), rotSpeed: [6, 3] });
+      }
+      // 머리를 뗀 뒤(=이제 헤드리스인) 몸통을 두 번 복제 — 지오메트리/재질은 캐시 공유라 저비용.
+      const bodyOrigin = defenderUnit.root.position.clone();
+      const bodyAngles: readonly number[] = [(-2 * Math.PI) / 3, (2 * Math.PI) / 3];
+      const bodyRotSpeeds: readonly (readonly [number, number])[] = [
+        [-5, 4],
+        [4, -6],
+      ];
+      bodyAngles.forEach((angle, i) => {
+        const clone = defenderUnit.root.clone(true);
+        this.scene.add(clone);
+        active.shatterFragments.push({
+          holder: clone,
+          origin: bodyOrigin,
+          driftDir: new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)),
+          rotSpeed: bodyRotSpeeds[i]!,
+        });
+      });
+    }
+
+    const shatterT = finisherT - strikeEnd;
+    this.updateShatterFragments(active.shatterFragments, shatterT, 1.2, 2.8);
+
+    // 원본 유닛(하체 이하 마지막 네 번째 조각) — 나머지 세 조각과 다른 방향으로.
+    const [defX, defZ] = active.defenderWorld;
+    const gravity = 2.8;
+    defenderUnit.root.position.set(defX - shatterT * 1.2 * 0.6, Math.max(0, shatterT * 0.5 - 0.5 * gravity * shatterT * shatterT), defZ - shatterT * 1.2 * 0.5);
+    defenderUnit.root.rotation.x = shatterT * 5;
+    defenderUnit.root.rotation.z = -shatterT * 4;
+
+    const shrinkStart = Math.max(strikeEnd, active.totalDuration - active.approachDuration - SHRINK_SEC * pacingScale);
+    this.applyShatterShrink(active, defenderUnit, finisherT, shrinkStart);
+  }
+
+  /** Queen/King 공용 — 파쇄 파편들을 원점(origin)에서 driftDir 방향으로 포물선 궤적 + 텀블링시킨다. */
+  private updateShatterFragments(fragments: readonly ShatterFragment[], shatterT: number, speed: number, gravity: number): void {
+    for (const frag of fragments) {
+      frag.holder.position.set(
+        frag.origin.x + frag.driftDir.x * shatterT * speed,
+        Math.max(0.05, frag.origin.y + shatterT * 0.9 - 0.5 * gravity * shatterT * shatterT),
+        frag.origin.z + frag.driftDir.z * shatterT * speed
+      );
+      frag.holder.rotation.x = shatterT * frag.rotSpeed[0];
+      frag.holder.rotation.z = shatterT * frag.rotSpeed[1];
     }
   }
 
-  /** Pawn/Knight/Bishop/King(기본값) 공용 — 쓰러진 뒤(topple) 서서히 축소되며 사라지는 마무리. */
+  /** Queen/King 공용 — 원본 유닛과 모든 파쇄 파편을 함께 서서히 축소시켜 사라지게 한다. */
+  private applyShatterShrink(active: ActiveCombat, defenderUnit: UnitInstance, finisherT: number, shrinkStart: number): void {
+    if (finisherT <= shrinkStart) return;
+    const totalRel = active.totalDuration - active.approachDuration;
+    const shrinkT = clamp01((finisherT - shrinkStart) / Math.max(0.001, totalRel - shrinkStart));
+    const scale = 1 - easeInQuad(shrinkT) * 0.92;
+    defenderUnit.root.scale.setScalar(scale);
+    for (const frag of active.shatterFragments) frag.holder.scale.setScalar(scale);
+  }
+
+  /** Pawn/Knight/Bishop 및 미지정 타입(기본값) 공용 — 쓰러진 뒤(topple) 서서히 축소되며 사라지는 마무리. */
   private applyTopple(
     active: ActiveCombat,
     unit: UnitInstance,
@@ -610,10 +721,11 @@ export class CombatDirector {
     }
   }
 
+  /** 사용자 요청 §게임 내 사운드 — 공격자 타입별 전투 연출 효과음을 타격 순간 1회만 재생한다. */
   private playThudOnce(active: ActiveCombat): void {
     if (active.thudFired) return;
     active.thudFired = true;
-    this.soundRegistry.play('sfx.knockdown.thud');
+    this.soundRegistry.play(FINISHER_SFX_CUE[active.attackerType]);
   }
 
   /**
@@ -643,34 +755,72 @@ export class CombatDirector {
     requestAnimationFrame(tick);
   }
 
-  /** Bishop 낙뢰 — 방어자 머리 위에서 지그재그로 내리꽂히는 번개를 짧게 그렸다 지운다. */
+  /**
+   * Bishop 낙뢰 — 방어자 머리 위에서 지그재그로 내리꽂히는 번개(사용자 요청으로 더 크고 길게 개선:
+   * 굵은 바깥 글로우 + 얇은 밝은 코어의 이중 볼트, 초반 지지직 깜빡임 후 서서히 페이드,
+   * 착지 지점의 확산하는 임팩트 링).
+   */
   private spawnLightningBolt(top: THREE.Vector3, bottom: THREE.Vector3): void {
-    const material = new THREE.MeshBasicMaterial({ color: '#B47FFF', transparent: true, opacity: 1 });
-    const group = new THREE.Group();
-    const segments = 6;
-    let prev = top.clone();
-    for (let i = 1; i <= segments; i += 1) {
+    const segments = 10;
+    const jitter = 0.32;
+    const points: THREE.Vector3[] = [top.clone()];
+    for (let i = 1; i < segments; i += 1) {
       const t = i / segments;
       const point = top.clone().lerp(bottom, t);
-      if (i < segments) {
-        point.x += (Math.random() - 0.5) * 0.14;
-        point.z += (Math.random() - 0.5) * 0.14;
-      }
-      const dir = new THREE.Vector3().subVectors(point, prev);
-      const len = dir.length() || 0.001;
-      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, len, 5), material);
-      seg.position.copy(prev).addScaledVector(dir, 0.5);
-      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-      group.add(seg);
-      prev = point;
+      point.x += (Math.random() - 0.5) * jitter;
+      point.z += (Math.random() - 0.5) * jitter;
+      points.push(point);
     }
+    points.push(bottom.clone());
+
+    const buildBoltMesh = (radius: number, material: THREE.Material): THREE.Group => {
+      const boltGroup = new THREE.Group();
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const a = points[i]!;
+        const b = points[i + 1]!;
+        const dir = new THREE.Vector3().subVectors(b, a);
+        const len = dir.length() || 0.001;
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 6), material);
+        seg.position.copy(a).addScaledVector(dir, 0.5);
+        seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        boltGroup.add(seg);
+      }
+      return boltGroup;
+    };
+
+    const coreMat = new THREE.MeshBasicMaterial({ color: '#EAD9FF', transparent: true, opacity: 1 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: '#B47FFF', transparent: true, opacity: 0.5 });
+    const group = new THREE.Group();
+    group.add(buildBoltMesh(0.034, glowMat));
+    group.add(buildBoltMesh(0.015, coreMat));
+
+    // 착지 지점 임팩트 플래시 — 확 밝아졌다 넓게 퍼지며 사라지는 링.
+    const flashMat = new THREE.MeshBasicMaterial({ color: '#EAD9FF', transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const flash = new THREE.Mesh(new THREE.RingGeometry(0.01, 0.4, 24), flashMat);
+    flash.position.copy(bottom);
+    flash.rotation.x = -Math.PI / 2;
+    group.add(flash);
+
     this.scene.add(group);
 
     const start = performance.now();
-    const lifetimeSec = 0.22;
+    const lifetimeSec = 0.65;
+    const flickerEndSec = 0.22; // 초반 0.22초는 지지직 깜빡이는 구간, 이후 서서히 페이드.
     const tick = (): void => {
       const elapsed = (performance.now() - start) / 1000;
-      material.opacity = Math.max(0, 1 - elapsed / lifetimeSec);
+      if (elapsed < flickerEndSec) {
+        const flicker = 0.55 + 0.45 * Math.abs(Math.sin(elapsed * 55));
+        coreMat.opacity = flicker;
+        glowMat.opacity = 0.5 * flicker;
+      } else {
+        const fadeT = clamp01((elapsed - flickerEndSec) / (lifetimeSec - flickerEndSec));
+        coreMat.opacity = 1 - fadeT;
+        glowMat.opacity = 0.5 * (1 - fadeT);
+      }
+      const flashT = Math.min(1, elapsed / 0.35);
+      flash.scale.setScalar(1 + flashT * 2.2);
+      flashMat.opacity = Math.max(0, 0.9 * (1 - flashT));
+
       if (elapsed < lifetimeSec) {
         requestAnimationFrame(tick);
       } else {
@@ -678,19 +828,21 @@ export class CombatDirector {
         group.traverse((obj) => {
           if (obj instanceof THREE.Mesh) obj.geometry.dispose();
         });
-        material.dispose();
+        coreMat.dispose();
+        glowMat.dispose();
+        flashMat.dispose();
       }
     };
     requestAnimationFrame(tick);
   }
 
-  private finalize(attackerFrom: Square, attackerSquare: Square, defenderSquare: Square, queenShatterHolder: THREE.Object3D | null): void {
+  private finalize(attackerFrom: Square, attackerSquare: Square, defenderSquare: Square, shatterFragments: readonly ShatterFragment[]): void {
     // 일반 캡처는 defenderSquare === attackerSquare(=move.to), 앙파상은 다른 칸 — 어느 쪽이든 방어자가
     // 실제로 서 있는 칸(defenderSquare)에서 제거한 뒤 공격자를 attackerFrom → attackerSquare로 스냅한다.
     this.unitBoard.removeUnitAt(defenderSquare);
     this.unitBoard.relocateUnit(attackerFrom, attackerSquare);
-    // Queen 파쇄 연출로 씬에 직접 추가해뒀던 상체 조각도 함께 정리한다.
-    if (queenShatterHolder !== null) this.scene.remove(queenShatterHolder);
+    // Queen/King 파쇄 연출로 씬에 직접 추가해뒀던 파편들도 함께 정리한다.
+    for (const frag of shatterFragments) this.scene.remove(frag.holder);
   }
 
   private playVfx(cue: VfxCueDef, defenderSquare: Square): void {

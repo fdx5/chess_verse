@@ -8,3 +8,6 @@ packages/server/data/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# 원본 사운드 드롭 폴더 — 실제 앱은 packages/client/public/sound/ 사본만 서빙한다(중복 커밋 방지).
+/sound/

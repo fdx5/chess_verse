@@ -93,10 +93,18 @@ const unitFactory = new ProceduralUnitFactory();
 const unitBoard = new UnitBoard(scene, unitFactory, animationRegistry, tier);
 
 const audioGraph = new AudioGraph();
-audioGraph.bindResumeOnGesture(canvas);
+// 사용자 요청 §게임 내 사운드 — 메인 메뉴 버튼(캔버스 밖 DOM 오버레이) 클릭도 첫 제스처로 인정되도록
+// canvas 대신 앱 컨테이너 전체에 바인딩한다.
+audioGraph.bindResumeOnGesture(app);
 audioGraph.bindVisibilityPause();
 const soundRegistry = new SoundRegistry(audioGraph);
 const combatDirector = new CombatDirector(scene, unitBoard, cameraRig, animationRegistry, soundRegistry);
+
+// 사용자 요청 §게임 내 사운드 — 버튼 클릭 효과음. 개별 화면마다 배선하는 대신 앱 전체에 위임(delegate)
+// 리스너 하나로 처리한다: 모든 UI 버튼이 실제 `<button>` 엘리먼트라 이 한 곳에서 전부 커버된다.
+app.addEventListener('click', (ev) => {
+  if ((ev.target as HTMLElement | null)?.closest('button') !== null) soundRegistry.play('sfx.ui.button');
+});
 
 const bgmPlayer = new YoutubeBgmPlayer(app);
 const hud = new HUD(app, bgmPlayer);
@@ -165,6 +173,12 @@ function handleBoardClick(session: GameSession, square: Square | null, beforeAtt
   }
 }
 
+/** 사용자 요청 §게임 내 사운드 — 매치 최종 결과(승/패)에 맞는 효과음을 재생한다. */
+function playOutcomeSound(outcome: MatchOutcome): void {
+  if (outcome === 'win') soundRegistry.play('sfx.result.win');
+  else if (outcome === 'loss') soundRegistry.play('sfx.result.lose');
+}
+
 /** 사용자 요청 §처치 기록 패널 — 캡처 이동이면 잡힌 기물을 반환한다(앙파상은 대각선 뒤 칸 기준). */
 function capturedPieceOf(move: Move, prevPosition: Position): { color: Color; type: PieceType } | null {
   if ((move.flags & MoveFlag.CAPTURE) === 0) return null;
@@ -210,6 +224,7 @@ function bindSessionEvents(session: GameSession, config: MatchConfig): void {
         void maybeTriggerCpuMove(session, config);
       });
     } else {
+      soundRegistry.play('sfx.move.walk');
       unitBoard.applyMove(move, prevPosition);
     }
     scheduler.markDirty();
@@ -278,6 +293,7 @@ function startMatch(config: MatchConfig): void {
       });
     }
 
+    playOutcomeSound(outcome);
     resultModal.show(
       outcome,
       scoreMine,
@@ -411,6 +427,7 @@ function bindOnlineSessionEvents(session: GameSession): void {
         scheduler.markDirty();
       });
     } else {
+      soundRegistry.play('sfx.move.walk');
       unitBoard.applyMove(move, prevPosition);
     }
     scheduler.markDirty();
@@ -524,6 +541,7 @@ function getOrCreateNetClient(): NetClient {
       });
     }
 
+    playOutcomeSound(outcome);
     resultModal.show(
       outcome,
       payload.finalScoreYou,
