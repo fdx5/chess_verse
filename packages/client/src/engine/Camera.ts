@@ -13,7 +13,11 @@ export class OrbitCameraRig {
     // 있었다. FOV를 넓히고(45→58) 기본 시점을 수평에 더 가깝게 낮춰서 프레임 상단이 수평선 근처까지
     // 닿게 했다 — 이게 "카메라를 높이 든다"보다 실제로 벽화를 더 많이 보여주는 방향이다.
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 100);
-    this.camera.position.set(0, 6, 10);
+    // 사용자 요청 — 기본 시점을 백진영 뒤쪽(-Z)에 둬서 백이 흑을 바라보는 방향으로 시작한다.
+    // squareToWorld()가 rank 0(백 시작 랭크)을 -Z, rank 7(흑 시작 랭크)을 +Z에 배치하므로,
+    // 카메라를 +Z가 아닌 -Z에 두면 항상 백이 화면 앞쪽(카메라 쪽)에 서게 되어 매 대전 시작마다
+    // 수동으로 궤도 회전시킬 필요가 없다.
+    this.camera.position.set(0, 6, -10);
 
     this.controls = new OrbitControls(this.camera, domElement);
     this.controls.target.set(0, 0, 0);

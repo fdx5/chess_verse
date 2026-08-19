@@ -19,7 +19,9 @@ export const CASTLE_HALL_THEME: BoardTheme = {
   tile: { light: '#E8DCC0', dark: '#8B5A3C', roughness: 0.5, metalness: 0.05 },
   frame: { albedo: '#6B4A2F', roughness: 0.6, metalness: 0.1 },
   ambientLight: { color: '#FFF4E0', intensity: 0.45 },
-  directionalLight: { color: '#FFEBC7', intensity: 1.2, position: [5, 8, 3] },
+  // 카메라 기본 위치가 -Z(백진영 쪽)로 바뀐 것에 맞춰 키 라이트도 -Z로 옮겨 카메라 쪽에서
+  // 비추는 정면광을 유지한다(그대로 두면 카메라 반대편에서 비추는 역광이 되어 버림).
+  directionalLight: { color: '#FFEBC7', intensity: 1.2, position: [5, 8, -3] },
   skybox: { type: 'gradient', topColor: '#3A2E1F', bottomColor: '#1A140D' },
 };
 
