@@ -22,7 +22,7 @@ const WOOD_BORDER = '#6B4A2F';
  */
 export class MainMenu {
   readonly el: HTMLDivElement;
-  private mode: 'local2p' | 'cpu' | 'online' = 'local2p';
+  private mode: 'local2p' | 'cpu' | 'online' = 'cpu';
   private format: 'bo1' | 'bo3' = 'bo3';
   private difficulty: Difficulty = 'intermediate';
   private difficultySection: HTMLDivElement;
@@ -89,7 +89,7 @@ export class MainMenu {
     this.difficultySection = this.buildSection('난이도', DIFFICULTIES, this.difficulty, (v) => {
       this.difficulty = v as Difficulty;
     });
-    this.difficultySection.style.display = 'none';
+    this.difficultySection.style.display = this.mode === 'cpu' ? 'flex' : 'none';
     card.appendChild(this.difficultySection);
 
     card.appendChild(
