@@ -11,37 +11,104 @@ import {
 } from '@battle-chess/chess-core';
 import type { UnitBoard } from '../units/UnitBoard';
 import { squareToWorld } from '../units/UnitBoard';
+import type { UnitInstance } from '../units/UnitProvider';
 import type { OrbitCameraRig } from '../engine/Camera';
 import { AnimationRegistry, type CombatSceneDef, type VfxCueDef, type SfxCueDef } from './AnimationRegistry';
 import { CameraRig } from './CameraRig';
 import { SoundRegistry } from '../audio/SoundRegistry';
 import { MOVEMENT_PROFILES } from './movementClips';
+import { detachSubtree } from './effects/FinisherEffects';
 
 export type CinematicPacing = 'full' | 'short' | 'off';
 type Phase = 'playing' | 'restoring';
 
+// 넘어뜨리기(topple) + 축소-소멸(shrink) 공통 상수 — King(기본값)과 Pawn/Knight/Bishop의 "쓰러짐"
+// 마무리 단계가 공유한다. 절대 초 단위이며 `pacingScale`로 Short 페이싱에도 비례 축소한다.
+const KNOCKDOWN_SEC = 0.62;
+const LIFT_HEIGHT = 0.6;
+// 100°는 90°(완전 수평)를 넘어서는 각도라 쓰러진 기물의 몸통 끝부분이 보드 표면(y=0) 아래로 파고들어
+// 체스판과 겹쳐 보였다(사용자 육안 확인으로 발견). 88°로 낮춰 정확히 수평에 살짝 못 미치게 눕는다.
+const KNOCKDOWN_ANGLE = (88 * Math.PI) / 180;
+// 완전히 쓰러진 뒤 제거되기 전까지 서서히 작아지며 사라지는 시간 — 갑자기 팝업하듯 사라지던 것을 완화.
+const SHRINK_SEC = 0.3;
+
+// King(기본값) 전용 — 들어올려졌다가 내리찍는 기존 연출의 타이밍.
+const GENERIC_STRIKE_WINDUP_SEC = 0.18;
+const GENERIC_STRIKE_DOWN_SEC = 0.14;
+
+// 사용자 요청 §기물별 전투 연출 — 공격자 타입별 마무리 동작 타이밍(절대 초, pacingScale로 축소).
+const PAWN_WINDUP_SEC = 0.2;
+const PAWN_STRIKE_SEC = 0.16;
+const KNIGHT_WINDUP_SEC = 0.16;
+const KNIGHT_STRIKE_SEC = 0.14;
+const BISHOP_WINDUP_SEC = 0.35;
+const BISHOP_STRIKE_SEC = 0.12;
+const ROOK_WINDUP_SEC = 0.25;
+const ROOK_STRIKE_SEC = 0.16;
+const ROOK_CRUSH_HOLD_SEC = 0.12;
+const QUEEN_WINDUP_SEC = 0.16;
+const QUEEN_STRIKE_SEC = 0.14;
+const QUEEN_SHATTER_RELAX_SEC = 0.4;
+
+function clamp01(x: number): number {
+  return Math.min(1, Math.max(0, x));
+}
+function easeOutQuad(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
+function easeInQuad(t: number): number {
+  return t * t;
+}
+/** 낙하 가속(easeInQuad) 후 착지 시 살짝 넘어갔다(overshoot) 제자리로 가라앉는(settle) 무게감 있는 커스텀 이징. */
+function easeInSettle(t: number): number {
+  const overshoot = 1.08;
+  const rampShare = 0.85;
+  if (t < rampShare) {
+    return easeInQuad(t / rampShare) * overshoot;
+  }
+  const local = (t - rampShare) / (1 - rampShare);
+  return overshoot - (overshoot - 1) * easeOutQuad(local);
+}
+
+interface ActiveCombat {
+  scene: CombatSceneDef;
+  attackerType: PieceType;
+  attackerSquare: Square;
+  defenderSquare: Square;
+  attackerFrom: Square;
+  elapsed: number;
+  totalDuration: number;
+  approachDuration: number;
+  firedVfx: Set<VfxCueDef>;
+  firedSfx: Set<SfxCueDef>;
+  thudFired: boolean;
+  phase: Phase;
+  resolve: () => void;
+  // 이동 경로 상수 — 매 프레임 재계산 대신 시작 시 1회 계산해 캐시(사용자 요청 §기물별 전투 연출로
+  // 공격자 타입마다 다른 피니셔가 동일한 값을 반복 사용하기 때문).
+  start: [number, number];
+  fullEnd: [number, number];
+  clampedEnd: [number, number];
+  defenderWorld: [number, number];
+  toppleAxis: THREE.Vector3;
+  // 기물별 피니셔 전용 1회성 상태(해당 없는 타입에서는 계속 초기값).
+  bishopChannelFired: boolean;
+  bishopBoltFired: boolean;
+  rookCrushFired: boolean;
+  queenShatterHolder: THREE.Object3D | null;
+  queenShatterOrigin: THREE.Vector3 | null;
+}
+
 /**
  * D5-1/D5-3/D5-4/D5-5 §전투 연출 오케스트레이터. `AnimationRegistry.getCombatScene()`으로 얻은
- * 순수 데이터만 재생하며, 신규 연출 추가 시 이 파일은 절대 수정되지 않는다(R12 핵심 보장 — Sprint 6에서
- * 36개 조합을 등록해도 이 클래스 diff가 0이어야 한다).
+ * 순수 데이터(카메라/VFX·SFX 큐 타이밍)를 재생하는 한편, 공격자 기물 타입별로 서로 다른
+ * 마무리 동작(피니셔)을 실행한다(사용자 요청 §기물별 전투 연출 — Pawn 창 찌르기, Knight 검 베기,
+ * Bishop 낙뢰, Rook 프레스, Queen 대각선 파쇄). King은 기존 "들어올려 내리찍기" 연출을 그대로 유지.
  */
 export class CombatDirector {
   private pacing: CinematicPacing = 'full';
   private readonly cameraRig: CameraRig;
-  private active: {
-    scene: CombatSceneDef;
-    attackerType: PieceType;
-    attackerSquare: Square;
-    defenderSquare: Square;
-    attackerFrom: Square;
-    elapsed: number;
-    totalDuration: number;
-    approachDuration: number;
-    firedVfx: Set<VfxCueDef>;
-    firedSfx: Set<SfxCueDef>;
-    phase: Phase;
-    resolve: () => void;
-  } | null = null;
+  private active: ActiveCombat | null = null;
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -73,7 +140,7 @@ export class CombatDirector {
     const scene = this.animationRegistry.getCombatScene(attackerPiece.type, defenderPiece.type);
 
     if (this.pacing === 'off') {
-      this.finalize(move.from, move.to, defenderSquare);
+      this.finalize(move.from, move.to, defenderSquare, null);
       return Promise.resolve();
     }
 
@@ -82,6 +149,23 @@ export class CombatDirector {
       const approachBeat = scene.beats.find((b) => b.kind === 'approach');
       const approachDuration = approachBeat !== undefined ? (approachBeat.endSec / scene.totalDuration) * totalDuration : totalDuration * 0.3;
       this.cameraRig.begin();
+
+      // D5-2 클램프: 목적지 방향으로 (squares-0.5)/squares 지점까지만 접근(한 칸짜리 이동이면 정확히
+      // 중간에서 접선). 이하 피니셔 전용 상수도 여기서 1회 계산해 active에 캐시한다.
+      const start = squareToWorld(move.from);
+      const fullEnd = squareToWorld(move.to);
+      const squares = Math.max(Math.abs(fileOf(move.to) - fileOf(move.from)), Math.abs(rankOf(move.to) - rankOf(move.from))) || 1;
+      const clampFraction = Math.max(0, (squares - 0.5) / squares);
+      const clampedEnd: [number, number] = [
+        THREE.MathUtils.lerp(start[0], fullEnd[0], clampFraction),
+        THREE.MathUtils.lerp(start[1], fullEnd[1], clampFraction),
+      ];
+      const defenderWorld = squareToWorld(defenderSquare);
+      const dirX = defenderWorld[0] - start[0];
+      const dirZ = defenderWorld[1] - start[1];
+      const dirLen = Math.hypot(dirX, dirZ) || 1;
+      const toppleAxis = new THREE.Vector3(-dirZ / dirLen, 0, dirX / dirLen);
+
       this.active = {
         scene,
         attackerType: attackerPiece.type,
@@ -93,8 +177,19 @@ export class CombatDirector {
         approachDuration,
         firedVfx: new Set(),
         firedSfx: new Set(),
+        thudFired: false,
         phase: 'playing',
         resolve,
+        start,
+        fullEnd,
+        clampedEnd,
+        defenderWorld,
+        toppleAxis,
+        bishopChannelFired: false,
+        bishopBoltFired: false,
+        rookCrushFired: false,
+        queenShatterHolder: null,
+        queenShatterOrigin: null,
       };
     });
   }
@@ -103,7 +198,7 @@ export class CombatDirector {
   requestSkip(): void {
     const active = this.active;
     if (active === null) return;
-    this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare);
+    this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.queenShatterHolder);
     this.cameraRig.beginRestore();
     this.cameraRig.updateRestore(999); // 강제로 1프레임 만에 복귀 완료시킴(즉시 컷)
     this.active = null;
@@ -125,25 +220,22 @@ export class CombatDirector {
 
     active.elapsed += dtSeconds;
 
-    // D5-2 클램프: 목적지 방향으로 (squares-0.5)/squares 지점까지만 이동(한 칸짜리 이동이면 정확히
-    // 중간에서 접선). 나머지는 이 연출이 넘겨받아 최종 위치를 확정한다(approach 비트 구간에 한정).
+    // Short 페이싱은 totalDuration을 절반으로 줄이므로, 피니셔의 절대 초 상수도 같은 비율로
+    // 축소해야 scene이 정의한 death/result 비트 안에 들어맞는다.
+    const pacingScale = active.totalDuration / active.scene.totalDuration;
+
     const attackerUnit = this.unitBoard.getUnitAt(active.attackerFrom);
-    if (attackerUnit !== undefined) {
-      const approachT = Math.min(1, active.elapsed / active.approachDuration);
-      const profile = MOVEMENT_PROFILES[active.attackerType];
-      const start = squareToWorld(active.attackerFrom);
-      const fullEnd = squareToWorld(active.attackerSquare);
-      const squares =
-        Math.max(
-          Math.abs(fileOf(active.attackerSquare) - fileOf(active.attackerFrom)),
-          Math.abs(rankOf(active.attackerSquare) - rankOf(active.attackerFrom))
-        ) || 1;
-      const clampFraction = Math.max(0, (squares - 0.5) / squares);
-      const clampedEnd: [number, number] = [
-        THREE.MathUtils.lerp(start[0], fullEnd[0], clampFraction),
-        THREE.MathUtils.lerp(start[1], fullEnd[1], clampFraction),
-      ];
-      attackerUnit.root.position.copy(profile.path(start, clampedEnd, approachT));
+    const defenderUnit = this.unitBoard.getUnitAt(active.defenderSquare);
+
+    if (active.elapsed <= active.approachDuration) {
+      if (attackerUnit !== undefined) {
+        const profile = MOVEMENT_PROFILES[active.attackerType];
+        const approachT = Math.min(1, active.elapsed / active.approachDuration);
+        attackerUnit.root.position.copy(profile.path(active.start, active.clampedEnd, approachT));
+      }
+    } else {
+      const finisherT = active.elapsed - active.approachDuration;
+      this.runFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
     }
 
     const t = Math.min(1, active.elapsed / active.totalDuration);
@@ -160,21 +252,445 @@ export class CombatDirector {
       }
     }
 
-    const [dx, dz] = squareToWorld(active.defenderSquare);
+    const [dx, dz] = active.defenderWorld;
     this.cameraRig.update(t, active.scene.camera, new THREE.Vector3(dx, 0.5, dz));
 
     if (t >= 1) {
-      this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare);
+      this.finalize(active.attackerFrom, active.attackerSquare, active.defenderSquare, active.queenShatterHolder);
       this.cameraRig.beginRestore();
       active.phase = 'restoring';
     }
   }
 
-  private finalize(attackerFrom: Square, attackerSquare: Square, defenderSquare: Square): void {
+  private runFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    switch (active.attackerType) {
+      case 'p':
+        this.runPawnFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      case 'n':
+        this.runKnightFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      case 'b':
+        this.runBishopFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      case 'r':
+        this.runRookFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      case 'q':
+        this.runQueenFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+        return;
+      default:
+        this.runGenericFinisher(active, attackerUnit, defenderUnit, finisherT, pacingScale);
+    }
+  }
+
+  /** King(및 미지정 타입) — 기존 "공중으로 들어올려졌다가 방어자에게 내리찍는" 연출을 그대로 유지. */
+  private runGenericFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const strikeWindupSec = GENERIC_STRIKE_WINDUP_SEC * pacingScale;
+    const strikeDownSec = GENERIC_STRIKE_DOWN_SEC * pacingScale;
+    const knockdownSec = KNOCKDOWN_SEC * pacingScale;
+    const strikeWindupEnd = strikeWindupSec;
+    const strikeDownEnd = strikeWindupEnd + strikeDownSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+    const [defX, defZ] = active.defenderWorld;
+
+    if (attackerUnit !== undefined) {
+      if (finisherT <= strikeWindupEnd) {
+        const windupT = easeOutQuad(clamp01(finisherT / strikeWindupSec));
+        attackerUnit.root.position.set(clampedX, LIFT_HEIGHT * windupT, clampedZ);
+      } else if (finisherT <= strikeDownEnd) {
+        const downT = easeInQuad(clamp01((finisherT - strikeWindupEnd) / strikeDownSec));
+        attackerUnit.root.position.set(
+          THREE.MathUtils.lerp(clampedX, defX, downT),
+          THREE.MathUtils.lerp(LIFT_HEIGHT, 0, downT),
+          THREE.MathUtils.lerp(clampedZ, defZ, downT)
+        );
+      } else {
+        const [fullX, fullZ] = active.fullEnd;
+        if (fullX !== defX || fullZ !== defZ) {
+          const remaining = Math.max(0.001, active.totalDuration - active.approachDuration - strikeDownEnd);
+          const slideT = clamp01((finisherT - strikeDownEnd) / remaining);
+          attackerUnit.root.position.set(THREE.MathUtils.lerp(defX, fullX, slideT), 0, THREE.MathUtils.lerp(defZ, fullZ, slideT));
+        } else {
+          attackerUnit.root.position.set(defX, 0, defZ);
+        }
+      }
+    }
+
+    if (defenderUnit !== undefined) {
+      this.applyTopple(active, defenderUnit, finisherT, strikeDownEnd, knockdownSec, pacingScale);
+    }
+  }
+
+  /** Pawn — 창을 견착했다가 수평으로 내지르는 찌르기(사용자 요청). */
+  private runPawnFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = PAWN_WINDUP_SEC * pacingScale;
+    const strikeSec = PAWN_STRIKE_SEC * pacingScale;
+    const knockdownSec = KNOCKDOWN_SEC * pacingScale;
+    const windupEnd = windupSec;
+    const strikeEnd = windupEnd + strikeSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+    const [startX, startZ] = active.start;
+    const lungeLen = Math.hypot(clampedX - startX, clampedZ - startZ) || 1;
+    const lungeUX = (clampedX - startX) / lungeLen;
+    const lungeUZ = (clampedZ - startZ) / lungeLen;
+
+    if (attackerUnit !== undefined) {
+      const shoulderR = attackerUnit.bones['shoulder.R'];
+      let lunge = 0;
+      if (finisherT <= windupEnd) {
+        const wT = easeOutQuad(clamp01(finisherT / windupSec));
+        if (shoulderR !== undefined) shoulderR.rotation.x = THREE.MathUtils.lerp(0, -0.5, wT);
+      } else if (finisherT <= strikeEnd) {
+        const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
+        if (shoulderR !== undefined) shoulderR.rotation.x = THREE.MathUtils.lerp(-0.5, -1.9, sT);
+        lunge = 0.16 * sT;
+      } else {
+        const relaxT = easeOutQuad(clamp01((finisherT - strikeEnd) / knockdownSec));
+        if (shoulderR !== undefined) shoulderR.rotation.x = THREE.MathUtils.lerp(-1.9, -0.9, relaxT);
+        lunge = 0.16 * (1 - 0.5 * relaxT);
+      }
+      attackerUnit.root.position.set(clampedX + lungeUX * lunge, 0, clampedZ + lungeUZ * lunge);
+    }
+
+    if (defenderUnit !== undefined) {
+      this.applyTopple(active, defenderUnit, finisherT, strikeEnd, knockdownSec, pacingScale);
+    }
+  }
+
+  /** Knight — 검을 머리 위로 크게 들어 베어내리는 참격(사용자 요청). */
+  private runKnightFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = KNIGHT_WINDUP_SEC * pacingScale;
+    const strikeSec = KNIGHT_STRIKE_SEC * pacingScale;
+    const knockdownSec = KNOCKDOWN_SEC * pacingScale;
+    const windupEnd = windupSec;
+    const strikeEnd = windupEnd + strikeSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+
+    if (attackerUnit !== undefined) {
+      attackerUnit.root.position.set(clampedX, 0, clampedZ);
+      const shoulderR = attackerUnit.bones['shoulder.R'];
+      if (shoulderR !== undefined) {
+        if (finisherT <= windupEnd) {
+          const wT = easeOutQuad(clamp01(finisherT / windupSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(0, -2.5, wT);
+        } else if (finisherT <= strikeEnd) {
+          const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(-2.5, 1.0, sT);
+        } else {
+          const relaxT = easeOutQuad(clamp01((finisherT - strikeEnd) / knockdownSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(1.0, 0.15, relaxT);
+        }
+      }
+    }
+
+    if (defenderUnit !== undefined) {
+      this.applyTopple(active, defenderUnit, finisherT, strikeEnd, knockdownSec, pacingScale);
+    }
+  }
+
+  /** Bishop — 오브를 채널링해 방어자 머리 위로 낙뢰를 떨어뜨리는 원거리 연출(사용자 요청). */
+  private runBishopFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = BISHOP_WINDUP_SEC * pacingScale;
+    const strikeSec = BISHOP_STRIKE_SEC * pacingScale;
+    const knockdownSec = KNOCKDOWN_SEC * pacingScale;
+    const strikeEnd = windupSec + strikeSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+
+    if (attackerUnit !== undefined) {
+      // Bishop은 접근 완료 지점에서 부양한 채 멈춰 채널링만 한다(추가 이동 없음).
+      attackerUnit.root.position.set(clampedX, 0.15, clampedZ);
+      if (!active.bishopChannelFired) {
+        active.bishopChannelFired = true;
+        this.channelBishopOrb(attackerUnit, windupSec);
+      }
+    }
+
+    if (!active.bishopBoltFired && finisherT > strikeEnd) {
+      active.bishopBoltFired = true;
+      const [defX, defZ] = active.defenderWorld;
+      this.spawnLightningBolt(new THREE.Vector3(defX, 2.0, defZ), new THREE.Vector3(defX, 0.55, defZ));
+      this.playThudOnce(active);
+    }
+
+    if (defenderUnit !== undefined) {
+      this.applyTopple(active, defenderUnit, finisherT, strikeEnd, knockdownSec, pacingScale);
+    }
+  }
+
+  /** Rook — 공중에 떠올랐다가 방어자 칸으로 그대로 내리눌러 납작하게 프레스한다(사용자 요청). */
+  private runRookFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = ROOK_WINDUP_SEC * pacingScale;
+    const strikeSec = ROOK_STRIKE_SEC * pacingScale;
+    const holdSec = ROOK_CRUSH_HOLD_SEC * pacingScale;
+    const windupEnd = windupSec;
+    const strikeEnd = windupEnd + strikeSec;
+    const holdEnd = strikeEnd + holdSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+    const [defX, defZ] = active.defenderWorld;
+
+    if (attackerUnit !== undefined) {
+      if (finisherT <= windupEnd) {
+        const wT = easeOutQuad(clamp01(finisherT / windupSec));
+        attackerUnit.root.position.set(
+          THREE.MathUtils.lerp(clampedX, defX, wT * 0.4),
+          LIFT_HEIGHT * 1.3 * wT,
+          THREE.MathUtils.lerp(clampedZ, defZ, wT * 0.4)
+        );
+      } else if (finisherT <= strikeEnd) {
+        const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
+        attackerUnit.root.position.set(
+          THREE.MathUtils.lerp(THREE.MathUtils.lerp(clampedX, defX, 0.4), defX, sT),
+          THREE.MathUtils.lerp(LIFT_HEIGHT * 1.3, 0, sT),
+          THREE.MathUtils.lerp(THREE.MathUtils.lerp(clampedZ, defZ, 0.4), defZ, sT)
+        );
+        if (sT >= 0.999 && !active.rookCrushFired && defenderUnit !== undefined) {
+          active.rookCrushFired = true;
+          this.playThudOnce(active);
+          defenderUnit.root.scale.set(1.5, 0.06, 1.5);
+        }
+      } else {
+        attackerUnit.root.position.set(defX, 0, defZ);
+      }
+    }
+
+    if (defenderUnit !== undefined && active.rookCrushFired && finisherT > holdEnd) {
+      const totalRel = active.totalDuration - active.approachDuration;
+      const shrinkEndRel = Math.max(holdEnd + 0.05, totalRel);
+      const shrinkT = clamp01((finisherT - holdEnd) / Math.max(0.001, shrinkEndRel - holdEnd));
+      defenderUnit.root.scale.set(1.5 * (1 - 0.9 * shrinkT), 0.06 * (1 - shrinkT), 1.5 * (1 - 0.9 * shrinkT));
+    }
+  }
+
+  /**
+   * Queen — 대각으로 베어 상체(chest 이하: 머리·팔·케이프)와 하체(hips/다리/드레스)를
+   * 서로 반대 방향으로 흩날리며 파쇄한다(사용자 요청). 진짜 메시 절단 대신 기존 골격의
+   * 허리 관절(spine↔chest)에서 분리해 두 덩어리로 날려보내는 방식 — 회전(텀블링)과 낙하 궤적으로
+   * "대각선으로 부서짐"을 표현한다.
+   */
+  private runQueenFinisher(
+    active: ActiveCombat,
+    attackerUnit: UnitInstance | undefined,
+    defenderUnit: UnitInstance | undefined,
+    finisherT: number,
+    pacingScale: number
+  ): void {
+    const windupSec = QUEEN_WINDUP_SEC * pacingScale;
+    const strikeSec = QUEEN_STRIKE_SEC * pacingScale;
+    const windupEnd = windupSec;
+    const strikeEnd = windupEnd + strikeSec;
+    const [clampedX, clampedZ] = active.clampedEnd;
+
+    if (attackerUnit !== undefined) {
+      attackerUnit.root.position.set(clampedX, 0, clampedZ);
+      const shoulderR = attackerUnit.bones['shoulder.R'];
+      if (shoulderR !== undefined) {
+        if (finisherT <= windupEnd) {
+          const wT = easeOutQuad(clamp01(finisherT / windupSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(0, -2.2, wT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(0, 0.5, wT);
+        } else if (finisherT <= strikeEnd) {
+          const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(-2.2, 1.1, sT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(0.5, -0.6, sT);
+        } else {
+          const relaxT = easeOutQuad(clamp01((finisherT - strikeEnd) / QUEEN_SHATTER_RELAX_SEC));
+          shoulderR.rotation.x = THREE.MathUtils.lerp(1.1, 0.1, relaxT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(-0.6, 0, relaxT);
+        }
+      }
+    }
+
+    if (defenderUnit === undefined || finisherT <= strikeEnd) return;
+
+    this.playThudOnce(active);
+    if (active.queenShatterHolder === null) {
+      defenderUnit.mixer.stopAllAction();
+      const chest = defenderUnit.bones['chest'];
+      if (chest !== undefined) {
+        const holder = detachSubtree(chest, this.scene);
+        active.queenShatterHolder = holder;
+        active.queenShatterOrigin = holder.position.clone();
+      }
+    }
+
+    const shatterT = finisherT - strikeEnd;
+    const speed = 1.1;
+    const gravity = 2.6;
+    const driftX = active.toppleAxis.x;
+    const driftZ = active.toppleAxis.z;
+
+    const holder = active.queenShatterHolder;
+    const origin = active.queenShatterOrigin;
+    if (holder !== null && origin !== null) {
+      holder.position.set(
+        origin.x + driftX * shatterT * speed,
+        Math.max(0.08, origin.y + shatterT * 0.9 - 0.5 * gravity * shatterT * shatterT),
+        origin.z + driftZ * shatterT * speed
+      );
+      holder.rotation.x = shatterT * 7;
+      holder.rotation.z = shatterT * 4.5;
+    }
+
+    // 하체(hips/다리/드레스) — 반대 대각 방향으로 흩어진다.
+    const [defX, defZ] = active.defenderWorld;
+    defenderUnit.root.position.set(defX - driftX * shatterT * speed * 0.7, Math.max(0, shatterT * 0.5 - 0.5 * gravity * shatterT * shatterT), defZ - driftZ * shatterT * speed * 0.7);
+    defenderUnit.root.rotation.x = -shatterT * 5;
+    defenderUnit.root.rotation.z = shatterT * 3;
+
+    // 두 조각 다 서서히 작아지며 사라진다(사용자 요청 §씬 퀄리티 — 갑자기 팝업하듯 사라짐 완화).
+    const shrinkSec = SHRINK_SEC * pacingScale;
+    const totalRel = active.totalDuration - active.approachDuration;
+    const shrinkStart = Math.max(strikeEnd, totalRel - shrinkSec);
+    if (finisherT > shrinkStart) {
+      const shrinkT = clamp01((finisherT - shrinkStart) / Math.max(0.001, totalRel - shrinkStart));
+      const scale = 1 - easeInQuad(shrinkT) * 0.92;
+      defenderUnit.root.scale.setScalar(scale);
+      if (holder !== null) holder.scale.setScalar(scale);
+    }
+  }
+
+  /** Pawn/Knight/Bishop/King(기본값) 공용 — 쓰러진 뒤(topple) 서서히 축소되며 사라지는 마무리. */
+  private applyTopple(
+    active: ActiveCombat,
+    unit: UnitInstance,
+    finisherT: number,
+    toppleStartRel: number,
+    knockdownSec: number,
+    pacingScale: number
+  ): void {
+    if (finisherT <= toppleStartRel) return;
+    this.playThudOnce(active);
+    const knockT = easeInSettle(clamp01((finisherT - toppleStartRel) / knockdownSec));
+    unit.root.quaternion.setFromAxisAngle(active.toppleAxis, KNOCKDOWN_ANGLE * knockT);
+
+    const shrinkSec = SHRINK_SEC * pacingScale;
+    const totalRel = active.totalDuration - active.approachDuration;
+    const fallCompleteRel = toppleStartRel + knockdownSec;
+    const shrinkStart = Math.max(fallCompleteRel, totalRel - shrinkSec);
+    if (finisherT > shrinkStart) {
+      const shrinkT = clamp01((finisherT - shrinkStart) / Math.max(0.001, totalRel - shrinkStart));
+      unit.root.scale.setScalar(1 - easeInQuad(shrinkT) * 0.92);
+    }
+  }
+
+  private playThudOnce(active: ActiveCombat): void {
+    if (active.thudFired) return;
+    active.thudFired = true;
+    this.soundRegistry.play('sfx.knockdown.thud');
+  }
+
+  /**
+   * Bishop 오브 재질은 `MaterialCache`(같은 진영 전체가 공유)에서 온 것이라 직접 수정하면 안 된다
+   * (Sprint 8 §하얗게 밝아지던 버그와 동일 원인). 클론에만 채널링 발광을 적용했다가 원복한다.
+   */
+  private channelBishopOrb(attackerUnit: UnitInstance, windupSec: number): void {
+    const orb = attackerUnit.root.getObjectByName('bishop.orbMesh');
+    if (!(orb instanceof THREE.Mesh) || !(orb.material instanceof THREE.MeshPhysicalMaterial)) return;
+    const original = orb.material;
+    const glow = original.clone();
+    orb.material = glow;
+    const start = performance.now();
+    const durationMs = Math.max(1, windupSec * 1000);
+    const tick = (): void => {
+      const t = Math.min(1, (performance.now() - start) / durationMs);
+      glow.emissiveIntensity = THREE.MathUtils.lerp(0.9, 5, t);
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        setTimeout(() => {
+          orb.material = original;
+          glow.dispose();
+        }, 400);
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  /** Bishop 낙뢰 — 방어자 머리 위에서 지그재그로 내리꽂히는 번개를 짧게 그렸다 지운다. */
+  private spawnLightningBolt(top: THREE.Vector3, bottom: THREE.Vector3): void {
+    const material = new THREE.MeshBasicMaterial({ color: '#B47FFF', transparent: true, opacity: 1 });
+    const group = new THREE.Group();
+    const segments = 6;
+    let prev = top.clone();
+    for (let i = 1; i <= segments; i += 1) {
+      const t = i / segments;
+      const point = top.clone().lerp(bottom, t);
+      if (i < segments) {
+        point.x += (Math.random() - 0.5) * 0.14;
+        point.z += (Math.random() - 0.5) * 0.14;
+      }
+      const dir = new THREE.Vector3().subVectors(point, prev);
+      const len = dir.length() || 0.001;
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, len, 5), material);
+      seg.position.copy(prev).addScaledVector(dir, 0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+      group.add(seg);
+      prev = point;
+    }
+    this.scene.add(group);
+
+    const start = performance.now();
+    const lifetimeSec = 0.22;
+    const tick = (): void => {
+      const elapsed = (performance.now() - start) / 1000;
+      material.opacity = Math.max(0, 1 - elapsed / lifetimeSec);
+      if (elapsed < lifetimeSec) {
+        requestAnimationFrame(tick);
+      } else {
+        this.scene.remove(group);
+        group.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+        });
+        material.dispose();
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  private finalize(attackerFrom: Square, attackerSquare: Square, defenderSquare: Square, queenShatterHolder: THREE.Object3D | null): void {
     // 일반 캡처는 defenderSquare === attackerSquare(=move.to), 앙파상은 다른 칸 — 어느 쪽이든 방어자가
     // 실제로 서 있는 칸(defenderSquare)에서 제거한 뒤 공격자를 attackerFrom → attackerSquare로 스냅한다.
     this.unitBoard.removeUnitAt(defenderSquare);
     this.unitBoard.relocateUnit(attackerFrom, attackerSquare);
+    // Queen 파쇄 연출로 씬에 직접 추가해뒀던 상체 조각도 함께 정리한다.
+    if (queenShatterHolder !== null) this.scene.remove(queenShatterHolder);
   }
 
   private playVfx(cue: VfxCueDef, defenderSquare: Square): void {

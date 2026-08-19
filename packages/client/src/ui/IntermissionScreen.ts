@@ -47,6 +47,8 @@ export class IntermissionScreen {
       'border:1px solid #6B4A2F',
       'border-radius:10px',
       'padding:24px 32px',
+      'width:min(320px, 92vw)',
+      'box-sizing:border-box',
       'text-align:center',
       'color:#F2E8D5',
       'font:14px system-ui,sans-serif',

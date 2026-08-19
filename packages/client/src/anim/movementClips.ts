@@ -99,11 +99,14 @@ function knightTwoArcPath(start: readonly [number, number], end: readonly [numbe
   return new THREE.Vector3(x, y, z);
 }
 
+// 사용자 요청 — 이동 속도가 너무 빠르다는 피드백으로 전 기물 공통 배율만큼 늦춤(상대적 페이싱은 유지).
+const SPEED_SLOWDOWN = 1.35;
+
 export const MOVEMENT_PROFILES: Record<PieceType, MovementProfile> = {
-  p: { duration: (sq) => 0.35 + 0.3 * sq, path: linearPath(easeInOutQuad) },
-  n: { duration: () => 0.65, path: knightTwoArcPath },
-  b: { duration: (sq) => 0.4 + 0.22 * sq, path: bishopGlidePath },
-  r: { duration: (sq) => 0.45 * sq, path: rookSteppedPath },
-  q: { duration: (sq) => 0.3 + 0.24 * sq, path: queenSCurvePath },
-  k: { duration: (sq) => 0.45 + 0.32 * sq, path: linearPath(easeInOutQuad) },
+  p: { duration: (sq) => (0.35 + 0.3 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
+  n: { duration: () => 0.65 * SPEED_SLOWDOWN, path: knightTwoArcPath },
+  b: { duration: (sq) => (0.4 + 0.22 * sq) * SPEED_SLOWDOWN, path: bishopGlidePath },
+  r: { duration: (sq) => 0.45 * sq * SPEED_SLOWDOWN, path: rookSteppedPath },
+  q: { duration: (sq) => (0.3 + 0.24 * sq) * SPEED_SLOWDOWN, path: queenSCurvePath },
+  k: { duration: (sq) => (0.45 + 0.32 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
 };

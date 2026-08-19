@@ -3,12 +3,13 @@ import type { Color } from '@battle-chess/chess-core';
 import type { GeometryCache } from '../../engine/GeometryCache';
 import type { MaterialCache } from '../../engine/MaterialCache';
 import type { UnitInstance, QualityTier } from '../UnitProvider';
-import { makeBone, attachPart, buildArm, buildLeg, collectBones, getFactionMaterials, latheGeom, roundedBoxGeom, sphereGeom } from './PartKit';
+import { makeBone, attachPart, buildArm, buildLeg, collectBones, cylinderGeom, getFactionMaterials, latheGeom, sphereGeom } from './PartKit';
 
 /**
  * D4 §2.1 Pawn — Footsoldier. H=0.70, W=0.34, R=0.17.
  * 품질 개선: hips~chest를 박스 3개 스택 대신 연속 Lathe 실루엣 2단(하체 lathe + 상체 lathe, 30% 오버랩)으로
  * 재구성해 "따로 노는 박스 조립물" 인상을 없앤다.
+ * 사용자 요청(무기 교체): 단검+원형 방패 대신 한 손에 기다란 창을 든 모습으로 변경(`docs/DEVIATIONS.md` 참조).
  */
 export function buildPawn(color: Color, _quality: QualityTier, geometryCache: GeometryCache, materialCache: MaterialCache): UnitInstance {
   const { fabric, metal } = getFactionMaterials(color, materialCache);
@@ -60,8 +61,9 @@ export function buildPawn(color: Color, _quality: QualityTier, geometryCache: Ge
   const shoulderR = buildArm('R', [0.11, 0.05, 0], 0.14, 0.035, 0.14, 0.035, fabric, geometryCache, 'pawn');
   chest.add(shoulderL.upper, shoulderR.upper);
 
-  attachPart(shoulderL.end, roundedBoxGeom(geometryCache, 'pawn.shortsword', 0.02, 0.18, 0.015, 0.25), metal, [0, -0.09, 0]);
-  attachPart(shoulderR.end, geometryCache.getOrCreate('pawn.roundShield', () => new THREE.CylinderGeometry(0.11, 0.11, 0.02, 16)), metal, [0, -0.02, 0.05]);
+  // 기다란 창 — 오른손으로 손잡이 부근을 쥔 채 자루가 아래로는 무릎 근처까지, 위로는 머리 위까지 뻗는다.
+  attachPart(shoulderR.end, cylinderGeom(geometryCache, 'pawn.spear.shaft', 0.012, 0.62), metal, [0, 0.12, 0]);
+  attachPart(shoulderR.end, geometryCache.getOrCreate('pawn.spear.tip', () => new THREE.ConeGeometry(0.028, 0.1, 12)), metal, [0, 0.48, 0]);
 
   const bones = collectBones(root);
   const mixer = new THREE.AnimationMixer(root);

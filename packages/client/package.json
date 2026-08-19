@@ -12,6 +12,7 @@
     "three": "^0.160.1"
   },
   "devDependencies": {
-    "@types/three": "^0.160.0"
+    "@types/three": "^0.160.0",
+    "fake-indexeddb": "^6.2.5"
   }
 }

@@ -21,11 +21,18 @@ import { toFEN, type Move } from '@battle-chess/chess-core';
 import { SessionStore } from './session.js';
 import { RoomManager } from './room.js';
 import { MatchState, type MatchPlayer } from './match.js';
+import type { PlayerRepository } from './db/PlayerRepository.js';
+import type { MatchRepository } from './db/MatchRepository.js';
 
 const HEARTBEAT_TIMEOUT_MS = 20_000;
 const SWEEP_INTERVAL_MS = 5_000;
 const DISCONNECT_GRACE_SECONDS = 60;
 const MOVE_RATE_LIMIT_PER_SEC = 5;
+
+export interface NetServerDeps {
+  playerRepo: PlayerRepository;
+  matchRepo: MatchRepository;
+}
 
 interface Connection {
   ws: WebSocket;
@@ -51,7 +58,10 @@ export class NetServer {
   private readonly matches = new Map<string, MatchState>();
   private readonly sweepHandle: ReturnType<typeof setInterval>;
 
-  constructor(httpServer: HttpServer) {
+  constructor(
+    httpServer: HttpServer,
+    private readonly deps: NetServerDeps
+  ) {
     this.wss = new WebSocketServer({ server: httpServer });
     this.wss.on('connection', (ws) => this.handleConnection(ws));
     this.sweepHandle = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
@@ -142,11 +152,12 @@ export class NetServer {
   }
 
   private onPlayerIdentify(conn: Connection, payload: { playerId: string; nickname: string; secret?: string }): void {
-    const isNew = !this.connectionByPlayerId.has(payload.playerId);
     conn.playerId = payload.playerId;
     conn.nickname = payload.nickname.slice(0, 16);
     this.connectionByPlayerId.set(payload.playerId, conn);
-    const response: PlayerIdentifiedPayload = { playerId: payload.playerId, nickname: conn.nickname, isNew, secretAccepted: true, serverTimeMs: Date.now() };
+    // D10-1 §서버 등록 흐름 — WS 세션에 playerId를 바인딩하는 시점에 players 테이블도 UPSERT한다.
+    const { isNew, secretAccepted } = this.deps.playerRepo.upsert({ id: payload.playerId, nickname: conn.nickname, ...(payload.secret !== undefined ? { secret: payload.secret } : {}) });
+    const response: PlayerIdentifiedPayload = { playerId: payload.playerId, nickname: conn.nickname, isNew, secretAccepted, serverTimeMs: Date.now() };
     this.send(conn, envelope('PLAYER_IDENTIFIED', response));
   }
 
@@ -275,7 +286,10 @@ export class NetServer {
     if (matchComplete) this.finishMatch(match);
   }
 
+  /** D10-5 §write-then-notify — DB 커밋이 끝난 뒤에만 MATCH_END를 보낸다(위조 불가 서버 권위 기록). */
   private finishMatch(match: MatchState): void {
+    const serverMatchId = this.persistFinishedMatch(match);
+
     for (const player of [match.playerA, match.playerB]) {
       const opponent = match.getOpponent(player.playerId);
       const myScore = match.scoreByPlayerId[player.playerId] ?? 0;
@@ -285,11 +299,40 @@ export class NetServer {
         winnerColorForYou: myScore > oppScore ? 'you' : myScore < oppScore ? 'opponent' : 'draw',
         finalScoreYou: myScore,
         finalScoreOpponent: oppScore,
-        serverMatchId: null, // R15/D10 영속화는 Sprint 9b에서 연결
+        serverMatchId,
       };
       this.sendToPlayer(player.playerId, envelope('MATCH_END', payload));
     }
     this.matches.delete(match.matchId);
+  }
+
+  /** DB 쓰기 실패 시에도 결과 통보 자체는 막지 않는다(D10-5) — 실패하면 null을 반환한다. */
+  private persistFinishedMatch(match: MatchState): string | null {
+    const whitePlayer = match.playerAColorGame1 === 'w' ? match.playerA : match.playerB;
+    const blackPlayer = match.playerAColorGame1 === 'w' ? match.playerB : match.playerA;
+    const scoreWhite = match.scoreByPlayerId[whitePlayer.playerId] ?? 0;
+    const scoreBlack = match.scoreByPlayerId[blackPlayer.playerId] ?? 0;
+    const result: 'white' | 'black' | 'draw' | 'aborted' = match.games.length === 0 ? 'aborted' : scoreWhite > scoreBlack ? 'white' : scoreWhite < scoreBlack ? 'black' : 'draw';
+
+    try {
+      return this.deps.matchRepo.finalizeMatch({
+        format: match.format,
+        playerWhiteId: whitePlayer.playerId,
+        playerBlackId: blackPlayer.playerId,
+        whiteLabel: whitePlayer.displayName,
+        blackLabel: blackPlayer.displayName,
+        timeControl: match.timeControl.kind,
+        scoreWhite,
+        scoreBlack,
+        result,
+        startedAt: match.matchStartedAt,
+        endedAt: Date.now(),
+        games: match.games,
+      });
+    } catch (err) {
+      console.error('[netServer] persistFinishedMatch failed:', err);
+      return null;
+    }
   }
 
   private onResign(conn: Connection, matchId: string): void {
@@ -408,6 +451,6 @@ function otherColorOf(color: 'w' | 'b'): 'w' | 'b' {
   return color === 'w' ? 'b' : 'w';
 }
 
-export function attachNetServer(httpServer: HttpServer): NetServer {
-  return new NetServer(httpServer);
+export function attachNetServer(httpServer: HttpServer, deps: NetServerDeps): NetServer {
+  return new NetServer(httpServer, deps);
 }

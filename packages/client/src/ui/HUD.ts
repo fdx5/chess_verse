@@ -1,6 +1,8 @@
 import type { Color, PieceType } from '@battle-chess/chess-core';
 import { TurnIndicator } from './TurnIndicator';
 import { MoveList } from './MoveList';
+import { CapturedPiecesPanel } from './CapturedPiecesPanel';
+import type { YoutubeBgmPlayer } from '../audio/YoutubeBgmPlayer';
 
 const PROMOTION_CHOICES: readonly { type: PieceType; label: string }[] = [
   { type: 'q', label: '퀸' },
@@ -14,13 +16,38 @@ export class HUD {
   readonly root: HTMLDivElement;
   readonly turnIndicator = new TurnIndicator();
   readonly moveList = new MoveList();
+  private readonly capturedPanel = new CapturedPiecesPanel();
   private readonly promotionModal: HTMLDivElement;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer) {
     this.root = document.createElement('div');
     this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
     this.root.appendChild(this.turnIndicator.el);
     this.root.appendChild(this.moveList.el);
+    this.root.appendChild(this.moveList.tabEl);
+    this.root.appendChild(this.capturedPanel.el);
+
+    const bgmBtn = document.createElement('button');
+    bgmBtn.textContent = bgmPlayer.isPlaying() ? 'BGM 끄기' : 'BGM 켜기';
+    bgmBtn.style.cssText = [
+      'position:absolute',
+      'top:12px',
+      'left:12px',
+      'min-height:44px',
+      'padding:6px 14px',
+      'border-radius:8px',
+      'border:1px solid #6B4A2F',
+      'background:rgba(26,20,13,0.72)',
+      'color:#F2E8D5',
+      'font:13px system-ui,sans-serif',
+      'cursor:pointer',
+      'pointer-events:auto',
+    ].join(';');
+    bgmBtn.addEventListener('click', () => void bgmPlayer.toggle());
+    bgmPlayer.onStateChange((playing) => {
+      bgmBtn.textContent = playing ? 'BGM 끄기' : 'BGM 켜기';
+    });
+    this.root.appendChild(bgmBtn);
 
     this.promotionModal = document.createElement('div');
     this.promotionModal.style.cssText = [
@@ -47,6 +74,15 @@ export class HUD {
 
   resetMoveList(): void {
     this.moveList.clear();
+  }
+
+  /** 사용자 요청 — 진영별 처치 기록 패널. 새 게임 시작 시 초기화, 캡처 발생 시마다 갱신. */
+  recordCapture(capturerColor: Color, capturedType: PieceType): void {
+    this.capturedPanel.recordCapture(capturerColor, capturedType);
+  }
+
+  resetCaptured(): void {
+    this.capturedPanel.reset();
   }
 
   /** D7 §프로모션 UI — 4종 중 선택하게 하고 선택 결과를 반환한다. */

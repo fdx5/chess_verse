@@ -12,15 +12,15 @@ export const bishopIdle: AnimClipDef = clip('bishop.idle', 2.8, true, [
   track('head.rotation', [0, 1.4, 2.8], [0, 0, 0, 0, 0.04, 0, 0, 0, 0]),
 ]);
 
+// 사용자 요청으로 도보 기사(투구+검)로 리디자인되며 이중 리그(말+기수)가 사라져 표준 chest/head 본만 남았다.
 export const knightIdle: AnimClipDef = clip('knight.idle', 2.6, true, [
-  track('rider.chest.rotation', [0, 1.3, 2.6], [0, 0, 0, 0.025, 0, 0, 0, 0, 0]),
-  track('rider.head.rotation', [0, 1.3, 2.6], [0, 0, 0, 0, -0.03, 0, 0, 0, 0]),
-  track('head.rotation', [0, 1.3, 2.6], [0, 0, 0, 0.02, 0, 0, 0, 0, 0]),
+  track('chest.rotation', [0, 1.3, 2.6], [0, 0, 0, 0.025, 0, 0, 0, 0, 0]),
+  track('head.rotation', [0, 1.3, 2.6], [0, 0, 0, 0, -0.03, 0, 0, 0, 0]),
 ]);
 
+// 사용자 요청으로 첨성대풍 석탑으로 리디자인되며 팔/부유 파편 본이 사라져 chest(목 부분) 회전만 남았다.
 export const rookIdle: AnimClipDef = clip('rook.idle', 3.2, true, [
-  track('chest.rotation', [0, 1.6, 3.2], [0, 0, 0, 0.015, 0, 0, 0, 0, 0]),
-  track('float.0.position', [0, 1.6, 3.2], [-0.15, 0.35, 0.12, -0.15, 0.39, 0.12, -0.15, 0.35, 0.12]),
+  track('chest.rotation', [0, 1.6, 3.2], [0, 0, 0, 0.012, 0, 0, 0, 0, 0]),
 ]);
 
 export const queenIdle: AnimClipDef = clip('queen.idle', 2.5, true, [

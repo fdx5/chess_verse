@@ -29,7 +29,8 @@ export class MatchmakingScreen {
       'display:flex',
       'flex-direction:column',
       'gap:14px',
-      'min-width:260px',
+      'width:min(300px, 92vw)',
+      'box-sizing:border-box',
     ].join(';');
 
     this.messageEl = document.createElement('div');

@@ -17,12 +17,44 @@ import { MOVEMENT_PROFILES } from '../anim/movementClips';
 
 const BOARD_HALF = 4.0;
 
+// 사용자 요청 — 다리가 있는 기물(Pawn/Knight/King)은 이동 중 걷는 것처럼 다리를 움직인다.
+// 이동 소요시간(초 단위, 칸수와 무관하게 고정된 보폭 주기)에 맞춰 넓적다리를 좌우 교대로
+// 흔들고 앞으로 나가는 쪽 무릎을 굽힌다. Bishop(부유)·Rook(석탑)·Queen(드레스로 다리가 가려짐)은
+// 대상에서 제외한다.
+const LEGGED_PIECE_TYPES = new Set<PieceType>(['p', 'n', 'k']);
+const STRIDE_HZ = 2.2;
+const LEG_SWING_AMPLITUDE = 0.5;
+const KNEE_BEND_AMPLITUDE = 0.55;
+
+function applyWalkCycle(unit: UnitInstance, elapsedSec: number): void {
+  const thighL = unit.bones['thigh.L'];
+  const thighR = unit.bones['thigh.R'];
+  if (thighL === undefined || thighR === undefined) return;
+  const phase = elapsedSec * STRIDE_HZ * Math.PI * 2;
+  const swing = Math.sin(phase);
+  thighL.rotation.x = swing * LEG_SWING_AMPLITUDE;
+  thighR.rotation.x = -swing * LEG_SWING_AMPLITUDE;
+  const kneeL = unit.bones['knee.L'];
+  const kneeR = unit.bones['knee.R'];
+  if (kneeL !== undefined) kneeL.rotation.x = Math.max(0, -swing) * KNEE_BEND_AMPLITUDE;
+  if (kneeR !== undefined) kneeR.rotation.x = Math.max(0, swing) * KNEE_BEND_AMPLITUDE;
+}
+
+function resetWalkCycle(unit: UnitInstance): void {
+  const bones = unit.bones;
+  ['thigh.L', 'thigh.R', 'knee.L', 'knee.R'].forEach((name) => {
+    const bone = bones[name];
+    if (bone !== undefined) bone.rotation.x = 0;
+  });
+}
+
 export function squareToWorld(sq: Square): [number, number] {
   return [fileOf(sq) - BOARD_HALF + 0.5, rankOf(sq) - BOARD_HALF + 0.5];
 }
 
 interface ActiveMove {
   unit: UnitInstance;
+  type: PieceType;
   start: [number, number];
   end: [number, number];
   elapsed: number;
@@ -163,6 +195,7 @@ export class UnitBoard {
     const squares = Math.max(Math.abs(fileOf(to) - fileOf(from)), Math.abs(rankOf(to) - rankOf(from))) || 1;
     this.activeMoves.push({
       unit,
+      type,
       start: squareToWorld(from),
       end: squareToWorld(to),
       elapsed: 0,
@@ -182,7 +215,11 @@ export class UnitBoard {
       const t = Math.min(1, move.elapsed / move.duration);
       const pos = move.pathFn(move.start, move.end, t);
       move.unit.root.position.copy(pos);
-      if (t >= 1) this.activeMoves.splice(i, 1);
+      if (LEGGED_PIECE_TYPES.has(move.type)) applyWalkCycle(move.unit, move.elapsed);
+      if (t >= 1) {
+        if (LEGGED_PIECE_TYPES.has(move.type)) resetWalkCycle(move.unit);
+        this.activeMoves.splice(i, 1);
+      }
     }
   }
 

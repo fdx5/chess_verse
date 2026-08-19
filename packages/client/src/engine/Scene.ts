@@ -158,3 +158,41 @@ export function buildScene(theme: BoardTheme = CASTLE_HALL_THEME): THREE.Scene {
   scene.add(buildLighting(theme));
   return scene;
 }
+
+/**
+ * 사용자 요청 §360도 배경 — 정방위(equirectangular) 사진을 `scene.background`로 씌운다.
+ * `EquirectangularReflectionMapping`을 쓰면 카메라 회전/상하 이동에 대한 동기화를
+ * three.js의 배경 렌더 패스가 매 프레임 자동으로 처리하므로 별도 동기화 코드가 필요 없다.
+ * 로딩 전까지는 기존 그라디언트 스카이가 보이다가, 로드가 끝나면 그 자리를 대체한다.
+ */
+export function loadPhoto360Skybox(scene: THREE.Scene, url: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    new THREE.TextureLoader().load(
+      url,
+      (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        // 사용자 실측으로 발견 — 정방위 배경은 천장/바닥 쪽으로 갈수록 텍스처가 비스듬한 각도로
+        // 심하게 압축되는데, 비등방성 필터링(기본값 1=꺼짐)이 없으면 그 부분이 모자이크처럼 뭉개져
+        // 보인다. GPU가 지원하는 값과 무관하게 안전한 8로 고정(대부분의 GPU가 최소 8을 지원).
+        texture.anisotropy = 8;
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+
+        const oldSky = scene.getObjectByName('sky');
+        if (oldSky instanceof THREE.Mesh) {
+          scene.remove(oldSky);
+          oldSky.geometry.dispose();
+          if (Array.isArray(oldSky.material)) for (const m of oldSky.material) m.dispose();
+          else oldSky.material.dispose();
+        }
+
+        scene.background = texture;
+        resolve();
+      },
+      undefined,
+      (err) => reject(err instanceof Error ? err : new Error(String(err)))
+    );
+  });
+}

@@ -3,6 +3,7 @@ import { playFootstep } from './synth/footstep';
 import { playImpactDull } from './synth/impact';
 import { playShimmer, playGenericDissolve } from './synth/shimmer';
 import { playStinger } from './synth/stinger';
+import { playKnockdownThud } from './synth/thud';
 
 type SynthFn = (context: AudioContext, destination: AudioNode) => void;
 
@@ -14,6 +15,7 @@ const CUES: Record<string, { bus: AudioBusName; synth: SynthFn }> = {
   'sfx.footstep.metal': { bus: 'sfx', synth: (ctx, dest) => playFootstep(ctx, dest, 'metal') },
   'sfx.shimmer': { bus: 'sfx', synth: playShimmer },
   'sfx.ui.checkmate_stinger': { bus: 'ui', synth: playStinger },
+  'sfx.knockdown.thud': { bus: 'sfx', synth: playKnockdownThud },
 };
 
 /** D8 §사운드 큐 시트를 데이터 주도로 등록·재생한다(D4 UnitProvider와 동일 철학 — 나중에 샘플 파일로 교체 가능한 어댑터). */

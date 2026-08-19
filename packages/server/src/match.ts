@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { fromFEN, toFEN, generateLegalMoves, makeMove, getGameResult, otherColor, type Color, type Move, type Position, type GameResult } from '@battle-chess/chess-core';
+import { fromFEN, toFEN, toSAN, generateLegalMoves, makeMove, getGameResult, otherColor, type Color, type Move, type Position, type GameResult } from '@battle-chess/chess-core';
 import type { GameEndReason, MatchFormat, MoveRejectReason, TimeControlPreset } from '@battle-chess/protocol';
 import { ServerClock } from './clock.js';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const WIN_SCORE_BO3 = 2;
+const MAX_MOVES_BYTES = 4096;
 
 export interface MatchPlayer {
   playerId: string;
@@ -12,10 +13,19 @@ export interface MatchPlayer {
   sessionToken: string;
 }
 
+/** D10-4 §games 로우에 대응 — Sprint 9b MatchRepository.finalizeMatch()가 그대로 소비한다. */
 export interface GameRecord {
   gameIndex: number;
   result: 'white' | 'black' | 'draw';
   reason: GameEndReason;
+  plyCount: number;
+  movesSan: string;
+  movesTruncated: boolean;
+  finalFen: string;
+  startedAt: number;
+  endedAt: number;
+  whitePlayerId: string;
+  blackPlayerId: string;
 }
 
 export type MoveApplyResult = { accepted: true; resultingFen: string; move: Move } | { accepted: false; reason: MoveRejectReason };
@@ -32,6 +42,9 @@ export class MatchState {
   clock: ServerClock;
   readonly scoreByPlayerId: Record<string, number> = {};
   readonly games: GameRecord[] = [];
+  private currentSan: string[] = [];
+  private gameStartedAt = Date.now();
+  readonly matchStartedAt = Date.now();
 
   constructor(
     readonly playerA: MatchPlayer,
@@ -74,9 +87,11 @@ export class MatchState {
     const match = legal.find((m) => m.from === requestedMove.from && m.to === requestedMove.to && (requestedMove.promo === undefined || m.promo === requestedMove.promo));
     if (match === undefined) return { accepted: false, reason: 'illegal' };
 
+    const san = toSAN(this.position, match);
     this.clock.applyMove(myColor, clientTs, serverRecvTs);
     this.position = makeMove(this.position, match);
     this.moveHistory.push(match);
+    this.currentSan.push(san);
     this.positionHistory.push(this.position);
     return { accepted: true, resultingFen: toFEN(this.position), move: match };
   }
@@ -91,7 +106,21 @@ export class MatchState {
 
   /** 게임 하나가 끝났을 때 호출 — 점수 반영 + Bo3 매치 종료 여부 판정. */
   recordGameEnd(result: 'white' | 'black' | 'draw', reason: GameEndReason): { matchComplete: boolean } {
-    this.games.push({ gameIndex: this.gameIndex, result, reason });
+    const joined = this.currentSan.join(' ');
+    const truncated = joined.length > MAX_MOVES_BYTES;
+    this.games.push({
+      gameIndex: this.gameIndex,
+      result,
+      reason,
+      plyCount: this.currentSan.length,
+      movesSan: truncated ? joined.slice(0, MAX_MOVES_BYTES) : joined,
+      movesTruncated: truncated,
+      finalFen: toFEN(this.position),
+      startedAt: this.gameStartedAt,
+      endedAt: Date.now(),
+      whitePlayerId: this.getPlayerByColor('w').playerId,
+      blackPlayerId: this.getPlayerByColor('b').playerId,
+    });
 
     if (result === 'draw') {
       this.scoreByPlayerId[this.playerA.playerId] = (this.scoreByPlayerId[this.playerA.playerId] ?? 0) + 0.5;
@@ -115,6 +144,8 @@ export class MatchState {
     this.position = fromFEN(START_FEN);
     this.positionHistory = [this.position];
     this.moveHistory = [];
+    this.currentSan = [];
+    this.gameStartedAt = Date.now();
     this.clock = new ServerClock(this.timeControl, Date.now());
     this.phase = 'active';
   }

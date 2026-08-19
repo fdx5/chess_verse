@@ -277,4 +277,125 @@
 - DoD 충족 여부: 코드 레벨 배선 완료(서버는 Sprint 9a에서 자동화 테스트로 이미 검증) + tsc/eslint/build green, "브라우저 두 탭 실측"만 대기
 - **사용자 실측 이슈 1건**: 같은 브라우저 두 탭으로 테스트 시 `localStorage` 공유로 인해 두 탭이 동일한 `playerId`를 받아 한쪽이 매칭 알림을 못 받는 문제 — 코드 결함이 아니라 테스트 방법론 이슈로 판정(실제 서비스에서는 발생 불가), 시크릿 창/다른 브라우저로 재테스트 안내. `docs/DEVIATIONS.md` [스프린트 9c] 참조.
 - **추가 요청 반영**: 매칭 20초 타임아웃 UX — `packages/client/src/ui/MatchmakingScreen.ts` 신설(검색 중 모달 + 타임아웃 시 "대기 중인 온라인 사용자가 없습니다" 안내와 "메인 메뉴로" 버튼). `main.ts`에 `startQueueTimeout()`/`clearQueueTimeout()` 배선 — `QUEUE_JOIN` 전송 직후 20초 타이머 시작, `MATCH_FOUND` 수신 시 취소, 타임아웃 시 소켓 연결을 끊고 안내 화면 표시 후 버튼 클릭으로 메인 메뉴 복귀. tsc/eslint/build 재확인 완료(0 에러).
-- 다음 스프린트 준비 상태: ⚠️ (사용자가 시크릿 창 등으로 두 탭 온라인 대전 실측 확인 후 Sprint 9b — 전적 영속화(R15)로 진행)
+
+## Sprint 9b — 전적 DB 영속화(R15/D10) — 완료 ✅
+
+- 목표: 모든 매치 결과(로컬2인/CPU/온라인)를 오프라인 우선으로 저장하고, 플레이어가 언제든 자신의 전적을 불러올 수 있게 한다.
+- 생성 파일:
+  - `packages/protocol/src/history.ts` — 히스토리 REST DTO(요청/응답) 전체
+  - `packages/server/src/db/{connection,migrations,PlayerRepository,MatchRepository,HistoryQueries}.ts`
+  - `packages/server/src/http/historyApi.ts` — REST 6종 엔드포인트(identify/sync/list/detail/stats/delete)
+  - `packages/server/src/db/__tests__/roundtrip.test.ts` — D10-10 §1/2/3 검증(왕복/멱등성/위조 차단)
+  - `packages/client/src/persistence/{identity,schema,IndexedDbStore,MatchRecorder,HistoryClient,SyncEngine}.ts`
+  - `packages/client/src/persistence/__tests__/sync.test.ts` — D10-10 §1/4 검증(오프라인 저장/동기화 왕복/재시도)
+  - `packages/client/src/ui/{NicknameModal,HistoryScreen}.ts`
+  - 루트 `package.json`(devDeps `fake-indexeddb`), `packages/server/package.json`(`better-sqlite3`, `@types/better-sqlite3`)
+- 구현 내용:
+  - **서버 DB**: `better-sqlite3`(WAL, `busy_timeout=5000`) 파일 DB(`packages/server/data/bcr.sqlite`, gitignore 처리). `players`/`matches`/`games`/`schema_meta` 스키마는 D10-4 DDL 그대로(부분 유니크 인덱스로 업로드 멱등성 보장)
+  - **온라인 매치 = 서버 권위 기록(D10-5 write-then-notify)**: `match.ts`가 게임별 SAN 이력·타임스탬프·백/흑 플레이어ID까지 축적하도록 확장, `netServer.ts`의 `finishMatch()`가 `MatchRepository.finalizeMatch()`로 커밋을 **완료한 뒤에만** `MATCH_END`를 브로드캐스트(DB 쓰기 실패해도 결과 통보 자체는 막지 않고 `serverMatchId: null`로 계속 진행)
+  - **오프라인 우선 동기화(D10-2)**: `MatchRecorder`가 `game:matchEnded`/`net:matchEnd` 시점에 IndexedDB(`matches`/`games`/`syncQueue`/`meta` 4개 스토어)에 먼저 쓰고, 로컬2인/CPU만 `syncQueue`에 업로드 작업을 쌓는다(온라인은 이미 서버 기록이 있으므로 곧장 `synced`). `SyncEngine`이 지수 백오프(5s→15s→60s→300s, 최대 8회) + 5분 주기 타이머 + 부팅 2초/온라인 복귀/`net:connected` 트리거로 `POST /matches/sync` 업로드
+  - **아이덴티티(D10-1)**: `localStorage['bcr:identity']`에 `playerId`(UUID)/`nickname`/`secret`(32바이트 base64url) 저장. 최초 실행 시 `NicknameModal`이 닉네임을 받아 발급, 온라인 WS `PLAYER_IDENTIFY`와 REST `POST /players/identify`가 같은 아이덴티티를 공유하도록 통합(기존 Sprint 9c의 임시 `bcr.playerId`/`bcr.nickname` ad-hoc 저장을 제거하고 대체)
+  - **백업 코드 UI(사용자 확정 옵션 A)**: 설정 화면에 이름 변경/백업 코드 보기(`playerId:secret`, 클립보드 자동 복사)/코드로 복원/전적 삭제(로컬만·서버까지, 2단계 확인) 추가
+  - **히스토리 화면**: `HistoryScreen`이 로컬 IndexedDB를 1차 소스로 매치 목록(상대/방식/스코어/결과/일시, 온라인 아닌 기록엔 "로컬 기록" 배지)을 표시. 메인 메뉴에 "내 전적" 진입점 추가
+  - **위조 차단**: `source:'online'` 업로드는 서버가 항상 `409`로 거부, `verified` 컬럼(온라인만 1)으로 검증/로컬 통계를 분리 집계, secret은 SHA-256 해시로만 저장하고 `timingSafeEqual`로 비교
+- 검증 결과:
+  - `npx tsc --build --force`: 0 에러
+  - `eslint packages/*/src --ext .ts`: 0 에러, `any`/`TODO`/`FIXME` 0건(신규 파일 전수 grep 확인)
+  - `npm run build`: 성공
+  - `vitest run`: 신규 9건 전부 통과 — `packages/server/src/db/__tests__/roundtrip.test.ts` 5건(왕복 조회, 멱등성, online 409, 타인 조회 403, 잘못된 secret 401) + `packages/client/src/persistence/__tests__/sync.test.ts` 4건(CPU 매치 local 저장+syncQueue 적재, online 매치 즉시 synced, SyncEngine 성공 시 synced 갱신, 서버 5xx 시 재시도 예약) — 기존 87건 포함 전체 재실행 중(perft/셀프플레이 포함 약 5~7분, 백그라운드)
+  - `packages/server/src/__tests__/integration.test.ts`의 온라인 완주 테스트에 D10-10 §5 권위 기록 검증(MATCH_END 수신 시점에 이미 DB에 `verified:true` 로우가 존재하는지) 추가
+- 이탈 기록: `docs/DEVIATIONS.md` [스프린트 9b] 참조 — (1) `migrations/001_init.sql` 파일 대신 TS 문자열 상수로 대체(tsc 빌드 시 비-TS 파일 미복사 문제 회피), (2) `HistoryQueries.listMatches`가 D10-6 권장 UNION ALL 대신 단일 OR 쿼리 사용(데이터 규모상 실이득 없음), (3) 온라인 매치의 로컬 IndexedDB 사본은 `games: []`(요약만 즉시 synced로 저장 — 서버가 이미 상세 기록을 가지고 있어 상세 재생 UI는 REST 조회로 대체 가능하나 이번 스프린트에선 미구현), (4) CORS를 배포 오리진 화이트리스트가 아닌 `*`로 임시 허용(단일 개발 서버 단계라 실제 배포 전 교체 필요)
+- **미검증 항목 ⚠️**: 브라우저 미연결로 육안 확인 못함 — (1) 최초 실행 시 닉네임 모달이 뜨고 제출하면 메인 메뉴로 넘어가는지, (2) CPU/로컬 대전 종료 후 "내 전적"에 방금 판이 즉시 뜨는지, (3) 설정 화면의 백업 코드 보기/복원/삭제 버튼이 각각 동작하는지, (4) 서버 재기동 후에도 `packages/server/data/bcr.sqlite`가 유지되어 과거 전적이 남아있는지
+- DoD 충족 여부: D10-10 검증 항목 1(왕복)·2(멱등성)·3(위조 차단)·5(권위 기록) 자동화 테스트로 확인. 항목 4(오프라인 3건 완주 후 서버 기동 시 60초 내 synced)는 SyncEngine 단위 테스트로 핵심 로직만 검증(실제 서버 재기동 시나리오는 브라우저 실측 필요)
+- 다음 스프린트 준비 상태: ⚠️ (브라우저 실측 확인 후 Sprint 10 — 모바일/반응형/터치 대응으로 진행 권장)
+
+## Sprint 10 — 모바일 최적화 + 반응형 UI + 터치 — 완료 ✅
+
+- 목표: 모바일 브라우저에서 터치 조작과 반응형 레이아웃이 동작한다.
+- 생성/수정 파일:
+  - `packages/client/src/input/TouchGhost.ts`(신규), `packages/client/src/ui/responsive/Breakpoints.ts`(신규)
+  - `packages/client/src/input/PointerController.ts`(대폭 수정 — 탭/드래그 통합), `packages/client/src/engine/Camera.ts`(터치 매핑 명시)
+  - `packages/client/src/ui/MoveList.ts`(모바일 바텀시트), `packages/client/src/ui/HUD.ts`(탭 버튼 마운트)
+  - `packages/client/src/ui/{MainMenu,SettingsScreen,ResultModal,IntermissionScreen,MatchmakingScreen,NicknameModal}.ts`(반응형 폭/터치 타깃 수정)
+  - `packages/client/index.html`(viewport meta), `packages/client/src/main.ts`(드래그 콜백 배선)
+- 구현 내용:
+  - **탭/드래그 통합 입력**: `PointerController`를 콜백 객체 기반으로 재설계 — `pointerdown` 칸을 기록해두고, 이동 임계값(6px)을 넘고 그 칸이 내 턴 기물이면(`canStartDrag`) 드래그로 전환, 아니면(빈 칸/상대 기물/짧은 탭) 기존 카메라 궤도회전이나 탭 처리로 자연히 넘어간다. 드래그 종료(`onDragEnd`)는 **이미 `select()`된 기물 기준으로 기존 `trySquareClick()`을 그대로 재사용** — 탭-탭 플로우와 100% 같은 이동 검증 경로를 타므로 기존에 안정화된 로컬/CPU/온라인 입력 로직을 전혀 건드리지 않았다
+  - **터치 고스트**: `TouchGhost`가 드래그 중 손가락 위 -64px(UX_UI_SPEC §4 오프셋)에 유니코드 기물 글리프를 반투명(0.85) 오버레이로 표시. 3D 메시 복제 대신 2D DOM 오버레이로 단순화(이탈 기록 참조)
+  - **카메라-드래그 충돌 방지**: 기물 드래그가 시작되면 `OrbitControls.enabled=false`로 궤도회전을 잠그고, 드래그 종료/취소 시 복원. `controls.touches`를 명시적으로 `{ ONE: ROTATE, TWO: DOLLY_PAN }`으로 고정
+  - **기보 패널 → 모바일 바텀시트**: `MoveList`가 `Breakpoints.onLayoutChange()`(768px 기준 `matchMedia`)를 구독해, 데스크톱은 기존 우측 상단 고정 패널, 모바일은 화면 하단에서 슬라이드업하는 바텀시트(닫힘 시 높이 0, "기보 ▲/▼" 탭 버튼으로 토글)로 전환(UX_UI_SPEC §7 명시 레이아웃)
+  - **반응형 폭/터치 타깃 전수 점검**: 모든 모달형 UI(메인메뉴/설정/결과/인터미션/매칭/닉네임)의 고정 `min-width`를 `width:min(Npx, 92vw)` + `box-sizing:border-box`로 교체해 320px대 좁은 화면에서도 가로 오버플로 없이 표시되게 함. `MainMenu` 토글 행에 `flex-wrap:wrap` 추가(대전 방식 3버튼이 좁은 화면에서 줄바꿈). `SettingsScreen`의 신규 계정 버튼들을 32px→44px로 상향(44×44 터치 타깃 규칙)
+  - **뷰포트 메타**: `maximum-scale=1.0, user-scalable=no, viewport-fit=cover` 추가 — 페이지 핀치줌과 인게임 카메라 핀치줌(두 손가락 dolly)의 이중 해석 충돌 방지
+- 검증 결과:
+  - `npx tsc --build --force`: 0 에러
+  - `eslint packages/*/src --ext .ts`: 0 에러, `any`/`TODO`/`FIXME` 0건(신규 파일 grep 확인)
+  - `npm run build`: 성공
+  - `vitest run`: 회귀 없음 확인(느린 perft/셀프플레이 제외 69건 즉시 재확인 후, 전체 스위트 백그라운드 재실행) — 이번 스프린트는 입력/레이아웃 변경이라 신규 유닛테스트는 추가하지 않음(DOM/터치 이벤트는 실기 확인 영역)
+- 이탈 기록: `docs/DEVIATIONS.md` [스프린트 10] 참조 — (1) 터치 고스트를 3D 메시 클론이 아닌 2D DOM 오버레이로 단순화, (2) 드래그 중 원본 기물 30% 반투명 처리(스펙 명시)는 미구현, (3) UX_UI_SPEC §2의 전체 플레이어 패널/시계/잡은기물/재료우위 HUD는 이번 스프린트 범위 밖(애초에 이전 스프린트들에서도 미구현 — Sprint 10은 "반응형+터치"만 범위이며 그 HUD 자체를 새로 설계하지 않음), (4) 3단계 브레이크포인트 전부가 아니라 768px 경계 1개만 구조적으로 전환(기보 바텀시트) — 나머지는 유동형(`clamp`/`min(...,92vw)`) CSS로 커버
+- **미검증 항목 ⚠️**: 실기/에뮬레이션 미연결로 육안 확인 못함(이번 세션엔 브라우저 자동화 도구 자체가 연결되지 않음) — (1) 실제 터치 기기(또는 크롬 DevTools 기기 에뮬레이션)에서 탭-탭 이동, (2) 손가락으로 기물을 눌러 드래그하면 고스트가 따라오고 놓으면 이동되는지, (3) 좁은 화면에서 메인메뉴/설정/결과 모달이 잘리지 않는지, (4) 768px 미만에서 기보 패널이 하단 탭으로 바뀌는지, (5) 한 손가락 회전/두 손가락 확대가 기물 드래그와 충돌하지 않는지, (6) Low 티어 강제 시 프레임 유지(별도 실측 필요)
+- DoD 충족 여부: 코드 레벨 구현 완료(입력 로직은 기존 탭-탭 경로를 재사용해 회귀 위험 최소화) + tsc/eslint/build green. "실기 터치로 전체 플로우 완주"·"Low 티어 30fps 실측"은 실기/에뮬레이션 확인 필요
+- 다음 스프린트 준비 상태: ⚠️ (실기/에뮬레이션 확인 후 Sprint 11 — 성능 프로파일링으로 진행 권장)
+
+## Sprint 11 — 성능 프로파일링 & 예산 충족 — 부분 완료 ⚠️(브라우저 실측 항목 대기)
+
+- 목표: D9-1 예산표의 모든 수치를 실측으로 충족시킨다.
+- 생성/수정 파일:
+  - `packages/chess-core/src/makemove.ts`(대폭 수정 — Zobrist 증분 XOR 해싱으로 교체)
+  - `packages/chess-core/src/__tests__/zobristIncremental.test.ts`(신규 — 증분/전체재계산 일치 회귀 테스트)
+  - `packages/client/src/ui/PerfOverlay.ts`(신규 — 브라우저 실측용 FPS/드로우콜/삼각형/힙 오버레이, `` ` `` 키 토글)
+  - `docs/PERF_REPORT.md`(신규)
+  - (사용자 추가 요청) `packages/client/src/audio/YoutubeBgmPlayer.ts`(신규), `packages/client/src/ui/{MainMenu,HUD}.ts`(수정 — BGM ON/OFF 버튼)
+- 구현 내용:
+  - **Zobrist 증분 해싱**: Sprint 1에서 "정확성 우선, 성능은 유예"로 명시적으로 미룬 항목(`docs/DEVIATIONS.md` [스프린트 1])을 이번에 실제로 구현. `makeMove()`가 이동/캡처/앙파상/캐슬링(룩 이동 포함)/캐슬링권리 소실/앙파상 파일/차례 전환마다 정확히 바뀐 부분만 XOR — perft depth5 기준 **38.9% 속도 개선 실측**(`docs/PERF_REPORT.md` §1-1). AI 셀프플레이 테스트 벽시계 시간도 약 20% 단축(간접 확인)
+  - **회귀 방지**: 기존 perft 테스트는 노드 수만 세고 해시값 자체는 검증하지 않아, 증분 갱신 버그가 있어도 놓칠 수 있었다 — 시작 포지션/kiwipete 양쪽에서 3수 깊이까지 모든 노드의 증분 해시가 전체 재계산과 일치하는지 재귀 검증하는 테스트를 먼저 추가한 뒤 구현(TDD 순서)
+  - **PerfOverlay**: `renderer.info`(draw calls/triangles/geometries/textures)와 `performance.memory`(Chrome 계열, JS heap)를 실시간 표시. 이 세션엔 브라우저 도구가 없어 직접 측정 불가능한 항목을 사용자가 직접 켜서 예산표와 비교할 수 있게 하는 용도
+  - **(사용자 추가 요청) BGM ON/OFF**: 사용자가 지정한 유튜브 두 곡(`Kib-dS_R2Uo`, `4YMpGYZgmWQ`)을 순서대로 무한 반복 재생하는 `YoutubeBgmPlayer` 신설(공식 IFrame Player API 임베드 — 다운로드/추출 없음). 메인 메뉴와 인게임 HUD 양쪽에 ON/OFF 토글 버튼을 두고 같은 재생 상태를 공유(`onStateChange` 구독). "게임 화면 진입 시 기본 자동재생, 메인 메뉴에서는 자동재생 안 함" 요구사항대로 `handleStartFromMenu()`(= "시작" 버튼 클릭 핸들러) 안에서만 `play()`를 호출해 브라우저 자동재생 정책(사용자 제스처 필요)을 만족시킴
+- 검증 결과:
+  - `npx tsc --build --force`: 0 에러
+  - `eslint packages/*/src --ext .ts`: 0 에러, `any`/`TODO`/`FIXME` 0건(신규 파일 grep 확인)
+  - `npm run build`: 성공, 메인 번들 gzip **178.50 KB**(예산 900KB 대비 여유 큼 — 코드 스플리팅 불필요 판단)
+  - `vitest run`: **98/98 전부 통과**(기존 96 + 신규 Zobrist 검증 2건), 회귀 없음
+- 이탈 기록: `docs/DEVIATIONS.md` [스프린트 11] 참조 — 브라우저 실측 지표는 코드로 확정할 수 없어 `PerfOverlay` 제공으로 대체
+- **미검증 항목 ⚠️(DoD 핵심)**: 데스크톱/모바일 실측 FPS·Draw call·Triangle·TTI·힙 — `docs/PERF_REPORT.md` §3/§4 참조. `localhost:5180`에서 `` ` `` 키로 오버레이를 켜서 확인 필요. BGM 기능도 브라우저 실측 필요(유튜브 IFrame 로드/자동재생 동작 여부, ON/OFF 버튼 두 곳의 상태 동기화)
+- DoD 충족 여부: 코드로 확정 가능한 항목(Zobrist 최적화 실측+회귀보호, 번들 크기)은 완료. "데스크톱/모바일 각각 실측 로그 제시"는 사용자 확인 필요 — 완전 충족 아님(⚠️)
+- 다음 스프린트 준비 상태: ⚠️ (브라우저 실측 결과 확인 후 Sprint 12 — 폴리시로 진행하거나, 예산 초과 항목이 있으면 추가 최적화 이터레이션)
+
+## 사용자 요청 — 전투 연출 개편 + 기물 리디자인(나이트/폰) — 완료 ✅(브라우저 육안 확인 대기)
+
+Sprint 11 작업 중 사용자가 실시간으로 요청한 3건. 로드맵 스프린트 번호 밖의 애드혹 변경이라 별도 항목으로 기록한다.
+
+- 생성/수정 파일:
+  - `packages/client/src/audio/synth/thud.ts`(신규), `packages/client/src/audio/SoundRegistry.ts`(수정 — `sfx.knockdown.thud` 등록)
+  - `packages/client/src/anim/CombatDirector.ts`(수정 — 캡처 연출 전면 개편)
+  - `packages/client/src/units/builders/{KnightBuilder,PawnBuilder}.ts`(전면 재작성), `packages/client/src/anim/data/movementClips/idle.ts`(수정 — 나이트 idle 클립을 새 본 이름에 맞춤)
+- 구현 내용:
+  - **전투 연출 개편**: "기물이 다른 기물을 잡을 때 씬을 바꿔줘 — 공중에 들어서 윗부분을 쳐서 옆으로 넘어뜨리고, 넘어뜨릴 때 낮은 음의 툭 소리" 요청 반영. 기존에는 공격자가 접근 지점에서 멈춘 채 방어자가 파티클로 소멸하는 연출이었는데(37개 씬 데이터 파일 전부가 `attackerClipId`/`defenderClipId`를 항상 `null`로 두고 실제 모션은 `CombatDirector`가 담당하는 구조라는 걸 먼저 확인), **`CombatDirector.ts` 단 한 곳만 수정**해 37개 조합 전체에 일괄 적용했다: approach 종료 후 공격자가 공중으로 들어올려졌다가(windup 0.18s) 방어자 칸으로 내리찍고(strike-down 0.14s), 착지 순간 방어자가 공격 방향에 수직인 수평축을 기준으로 옆으로 넘어간다(knockdown 0.45s, easeIn 가속). 앙파상처럼 공격자의 최종 목적지가 방어자 칸과 다르면 착지 후 남은 시간 동안 그쪽으로 슬라이드. Short 페이싱에서도 비례 축소되도록 `pacingScale` 적용
+  - **낮은 음 SFX**: `playKnockdownThud`(90→32Hz 사인 스윕 + 저역통과 노이즈, 0.38s) 신설 — 기존 `sfx.impact.dull`(120→55Hz, 밴드패스, 0.18s, 무기 타격음)보다 더 낮고 길게 감쇠시켜 "타격"과 "쓰러짐"을 청각적으로 구분. 넘어뜨리기 시작 순간에 정확히 1회만 발화(`thudFired` 플래그)
+  - **나이트 리디자인**: "말 탄 모습이 이상해 보인다 — 투구 쓴 장신 기사가 검을 든 모습으로" 요청 반영. 기존 이중 리그(말 4족+기수, `rider.*` 접두 본)를 완전히 제거하고 King과 같은 표준 단일 휴머노이드 리그(hips→spine→chest→head, 표준 `thigh/knee/foot`, `shoulder/elbow/hand`)로 전면 재작성. 얼굴 전체를 감싸는 원기둥+반구 투구, 오른손 검, 왼손 소형 방패. **가슴·등 십자 문장**(세로+가로 막대 각 2조) 추가 — 백진영 붉은색(`#B3352E`), 흑진영 노란색(`#D9C43A`), 진영 갑옷 색과 무관하게 고정
+  - **폰 무기 교체**: 기존 단검(왼손)+원형 방패(오른손) 조합을 제거하고 오른손에 기다란 창(자루 0.62 + 원뿔 창끝, 유닛 키(0.70)에 필적하는 길이)을 쥔 모습으로 교체
+  - **부수 수정**: 나이트 idle 클립(`idle.ts`)이 이제 사라진 `rider.chest`/`rider.head` 본을 타깃하고 있던 걸 발견해 표준 `chest`/`head` 본으로 교정(예전에도 실제로 안 움직였던 죽은 트랙이었음)
+- 검증 결과:
+  - `npx tsc --build --force`: 0 에러
+  - `eslint packages/*/src --ext .ts`: 0 에러, `any`/`TODO`/`FIXME` 0건
+  - `npm run build`: 성공
+  - `vitest run`(perft/셀프플레이 제외 빠른 회귀 71건): 전부 통과, 회귀 없음 — 이번 변경은 순수 절차적 지오메트리/연출 타이밍이라 기존 스위트가 대부분 이미 커버(별도 신규 단위테스트는 작성하지 않음 — 시각적 결과물은 코드로 자동 검증하기 어려운 영역)
+- 이탈 기록: `docs/DEVIATIONS.md` [기물 리디자인]/[전투 연출 개편] 참조 — D4 원안의 나이트 "비대칭 타원 풋프린트(이중 리그)" 식별 전략을 사용자 요청으로 완전히 포기했음을 명시
+- **미검증 항목 ⚠️**: 브라우저 육안 확인 필요 — (1) 캡처 시 공격자가 실제로 공중에 떴다가 내리찍는지, (2) 방어자가 옆으로 자연스럽게 넘어가는지(방향이 이상하지 않은지), (3) 넘어지는 순간 낮은 "쿵" 소리가 들리는지(기존 타격음과 별개로), (4) 나이트가 투구+검 모습으로 정상 렌더링되는지, 가슴/등 십자가 진영별 올바른 색으로 보이는지, (5) 폰이 창을 든 모습으로 보이는지, (6) 앙파상 캡처에서도 어색하지 않은지
+- 다음 확인: `localhost:5180`에서 실제로 기물을 잡아보고 위 항목들을 확인 후 피드백 필요
+
+## 사용자 요청 — 360도 배경 사진 — 완료 ✅(브라우저 육안 확인 대기)
+
+- 요청 배경: 사용자가 처음 제시한 URL(`virtualtour.monarchie.be`, 벨기에 왕실 공식 가상 투어)은 저작권이 있는 콘텐츠라 스크래핑/재배포가 불가능함을 설명하고, 대안으로 CC0(퍼블릭 도메인급) 무료 라이선스 파노라마로 대체하는 방안을 제안 → 사용자 승인. 1차로 Poly Haven **Ballroom**(작가 Sergej Majboroda)을 적용했다가, 사용자가 직접 지정한 후보로 최종 교체: Poly Haven **Graaff Reinet Groote Kerk**(작가 Dario Barresi, CC0 — 따뜻한 조명의 웅장한 목조 성당 내부)
+- 생성/수정 파일:
+  - `packages/client/public/env/palace-church.jpg`(최종 — Poly Haven 8K 톤매핑 JPG를 2048×1024로 리샘플링·재압축, 32.87MB → 385KB; 1차로 썼던 `palace-ballroom.jpg`는 삭제)
+  - `packages/client/src/engine/Scene.ts`(수정 — `loadPhoto360Skybox()` 신설)
+  - `packages/client/src/main.ts`(수정 — 부팅 시퀀스에서 비동기 로드 호출)
+- 구현 내용:
+  - Poly Haven CDN에서 8K 원본(Tonemapped JPG)을 받아 Python Pillow로 2048×1024(JPEG q82)로 축소해 `packages/client/public/env/`에 정적 자산으로 배치(Vite가 그대로 `dist/client/env/`에 복사 — JS 번들에는 포함되지 않아 D9-1 초기 로드 예산과 무관)
+  - `THREE.TextureLoader`로 비동기 로드 후 `texture.mapping = THREE.EquirectangularReflectionMapping`을 설정해 `scene.background`로 지정. **카메라 회전/상하 이동과의 동기화는 별도 코드 없이 three.js의 배경 렌더 패스가 매 프레임 카메라 시점 기준으로 자동 처리**(equirect 배경의 표준 동작) — 사용자가 요청한 "동기화" 요구사항이 엔진 차원에서 이미 보장됨
+  - 로드 완료 전까지는 기존 그라디언트 스카이(절차적 구체)가 즉시 보이다가, 로드가 끝나면 그 자리를 교체(빈 화면/깜빡임 없음). 로드 실패 시에도 그라디언트 스카이가 계속 유지되도록 `catch`로 방어
+- 검증 결과:
+  - `npx tsc --build --force` / `eslint` / `npm run build`: 전부 0 에러, `dist/client/env/palace-church.jpg` 정적 복사 확인
+  - `vitest run`(빠른 회귀 71건): 전부 통과, 회귀 없음
+- 이탈 기록: `docs/DEVIATIONS.md` [360도 배경] 참조 — 원 요청 URL 대신 CC0 대체 자산을 쓴 경위와 라이선스 근거
+- **미검증 항목 ⚠️**: 브라우저 육안 확인 필요 — (1) 게임 화면에 성당풍 파노라마 배경이 실제로 보이는지, (2) 마우스 드래그로 카메라를 돌렸을 때 배경이 자연스럽게 함께 도는지, (3) 확대/축소(두 손가락 또는 휠) 시 위화감이 없는지, (4) 로드 전 그라디언트→사진 전환이 매끄러운지
+- 다음 확인: `localhost:5180`에서 확인 후 마음에 안 들면 다른 CC0 후보로 즉시 재교체 가능

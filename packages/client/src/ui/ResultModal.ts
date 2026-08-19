@@ -41,7 +41,8 @@ export class ResultModal {
       'display:flex',
       'flex-direction:column',
       'gap:16px',
-      'min-width:280px',
+      'width:min(320px, 92vw)',
+      'box-sizing:border-box',
     ].join(';');
 
     const title = document.createElement('div');

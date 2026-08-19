@@ -2,19 +2,28 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import WebSocket from 'ws';
 import { attachNetServer, type NetServer } from '../netServer';
+import { openDatabase } from '../db/connection';
+import { PlayerRepository } from '../db/PlayerRepository';
+import { MatchRepository } from '../db/MatchRepository';
+import { HistoryQueries } from '../db/HistoryQueries';
 import { envelope } from '@battle-chess/protocol';
 import type { AnyMessage } from '@battle-chess/protocol';
 
 let httpServer: Server | null = null;
 let netServer: NetServer | null = null;
 
-function startServer(): Promise<number> {
+/** D10-10 §왕복 통합 테스트 — 테스트마다 독립된 인메모리 DB를 새로 연다. */
+function startServer(): Promise<{ port: number; historyQueries: HistoryQueries }> {
   return new Promise((resolve) => {
+    const db = openDatabase(':memory:');
+    const playerRepo = new PlayerRepository(db);
+    const matchRepo = new MatchRepository(db);
+    const historyQueries = new HistoryQueries(db);
     httpServer = createServer();
-    netServer = attachNetServer(httpServer);
+    netServer = attachNetServer(httpServer, { playerRepo, matchRepo });
     httpServer.listen(0, () => {
       const address = httpServer?.address();
-      resolve(typeof address === 'object' && address !== null ? address.port : 0);
+      resolve({ port: typeof address === 'object' && address !== null ? address.port : 0, historyQueries });
     });
   });
 }
@@ -88,7 +97,7 @@ function identify(client: TestClient, playerId: string, nickname: string): void 
 /** D9 Sprint 9 DoD 1: 두 클라이언트가 온라인 대전(Bo1)을 처음부터 끝까지 완주한다. */
 describe('NetServer 통합 — 두 소켓으로 온라인 대전 완주', () => {
   it('quick 매칭 → 폴즈 메이트까지 완주해 MATCH_END를 양쪽이 받는다', async () => {
-    const port = await startServer();
+    const { port, historyQueries } = await startServer();
     const alice = new TestClient(port);
     const bob = new TestClient(port);
     await Promise.all([alice.ready(), bob.ready()]);
@@ -153,6 +162,19 @@ describe('NetServer 통합 — 두 소켓으로 온라인 대전 완주', () => 
       const blackIsAlice = black === alice;
       const expectedAliceOutcome = blackIsAlice ? 'you' : 'opponent';
       expect(aliceMatchEnd.payload.winnerColorForYou).toBe(expectedAliceOutcome);
+
+      // D10-10 §5 권위 기록 테스트 — MATCH_END 수신 시점에 이미 서버 DB(SQLite)에 검증된 로우가 있어야 한다.
+      expect(aliceMatchEnd.payload.serverMatchId).not.toBeNull();
+      const serverMatchId = aliceMatchEnd.payload.serverMatchId;
+      if (serverMatchId !== null) {
+        const detail = historyQueries.getMatchDetail(serverMatchId, 'alice-id');
+        expect(detail).not.toBeNull();
+        expect(detail?.verified).toBe(true);
+        expect(detail?.source).toBe('online');
+        expect(detail?.games.length).toBe(1);
+        expect(detail?.games[0]?.reason).toBe('checkmate');
+        expect(detail?.games[0]?.movesSan?.length ?? 0).toBeGreaterThan(0);
+      }
     }
 
     alice.close();
@@ -160,7 +182,7 @@ describe('NetServer 통합 — 두 소켓으로 온라인 대전 완주', () => 
   }, 10_000);
 
   it('불법수를 보내면 MOVE_REJECTED를 받는다', async () => {
-    const port = await startServer();
+    const { port } = await startServer();
     const alice = new TestClient(port);
     const bob = new TestClient(port);
     await Promise.all([alice.ready(), bob.ready()]);
@@ -187,7 +209,7 @@ describe('NetServer 통합 — 두 소켓으로 온라인 대전 완주', () => 
 
   /** D9 Sprint 9 DoD 2: 재접속 시 FEN·기보·시계가 완전 일치. */
   it('재접속하면 STATE_SYNC로 정확한 FEN을 받는다', async () => {
-    const port = await startServer();
+    const { port } = await startServer();
     const alice = new TestClient(port);
     const bob = new TestClient(port);
     await Promise.all([alice.ready(), bob.ready()]);
