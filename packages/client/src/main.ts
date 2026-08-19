@@ -107,7 +107,7 @@ app.addEventListener('click', (ev) => {
 });
 
 const bgmPlayer = new YoutubeBgmPlayer(app);
-const hud = new HUD(app, bgmPlayer);
+const hud = new HUD(app, bgmPlayer, () => exitToMenu());
 const intermissionScreen = new IntermissionScreen(app);
 const resultModal = new ResultModal(app);
 const matchmakingScreen = new MatchmakingScreen(app);
@@ -572,6 +572,19 @@ function disconnectOnline(): void {
   onlineSession = null;
   onlineMatchId = null;
   currentConfig = null;
+}
+
+/** 사용자 요청 §인게임 메뉴 나가기 버튼 — 온라인은 연결을 끊어 상대측에 이탈로 처리되게 하고,
+ * 로컬/CPU는 매치 컨트롤러를 폐기해 이후 CPU 수순 트리거(maybeTriggerCpuMove)가 무시되게 한다. */
+function exitToMenu(): void {
+  if (currentConfig?.source === 'online') {
+    disconnectOnline();
+  } else {
+    matchController = null;
+    currentConfig = null;
+  }
+  matchmakingScreen.hide();
+  mainMenu.show();
 }
 
 function startOnlineMatch(config: MatchConfig): void {

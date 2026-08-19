@@ -19,7 +19,7 @@ export class HUD {
   private readonly capturedPanel = new CapturedPiecesPanel();
   private readonly promotionModal: HTMLDivElement;
 
-  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer) {
+  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void) {
     this.root = document.createElement('div');
     this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
     this.root.appendChild(this.turnIndicator.el);
@@ -27,12 +27,11 @@ export class HUD {
     this.root.appendChild(this.moveList.tabEl);
     this.root.appendChild(this.capturedPanel.el);
 
-    const bgmBtn = document.createElement('button');
-    bgmBtn.textContent = bgmPlayer.isPlaying() ? 'BGM 끄기' : 'BGM 켜기';
-    bgmBtn.style.cssText = [
-      'position:absolute',
-      'top:12px',
-      'left:12px',
+    const topLeftRow = document.createElement('div');
+    topLeftRow.style.cssText = 'position:absolute;top:12px;left:12px;display:flex;gap:8px;pointer-events:none;';
+    this.root.appendChild(topLeftRow);
+
+    const cornerBtnStyle = [
       'min-height:44px',
       'padding:6px 14px',
       'border-radius:8px',
@@ -43,11 +42,23 @@ export class HUD {
       'cursor:pointer',
       'pointer-events:auto',
     ].join(';');
+
+    const bgmBtn = document.createElement('button');
+    bgmBtn.textContent = bgmPlayer.isPlaying() ? 'BGM 끄기' : 'BGM 켜기';
+    bgmBtn.style.cssText = cornerBtnStyle;
     bgmBtn.addEventListener('click', () => void bgmPlayer.toggle());
     bgmPlayer.onStateChange((playing) => {
       bgmBtn.textContent = playing ? 'BGM 끄기' : 'BGM 켜기';
     });
-    this.root.appendChild(bgmBtn);
+    topLeftRow.appendChild(bgmBtn);
+
+    const exitBtn = document.createElement('button');
+    exitBtn.textContent = '메뉴로 나가기';
+    exitBtn.style.cssText = cornerBtnStyle;
+    exitBtn.addEventListener('click', () => {
+      if (window.confirm('메인 메뉴로 나가시겠습니까? 진행 중인 대전은 패배로 처리될 수 있습니다.')) onExitToMenu();
+    });
+    topLeftRow.appendChild(exitBtn);
 
     this.promotionModal = document.createElement('div');
     this.promotionModal.style.cssText = [
