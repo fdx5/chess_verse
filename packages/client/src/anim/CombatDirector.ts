@@ -92,49 +92,6 @@ function easeInSettle(t: number): number {
   return overshoot - (overshoot - 1) * easeOutQuad(local);
 }
 
-/** 룩 전용 거대 오른손 주먹(Right Fist) 모델을 생성한다 — 스컬프트/탑 형태의 룩이라도 명확한 오른손 강타 펀치를 시각화한다. */
-function createRookFist(isWhite: boolean): THREE.Group {
-  const fistGroup = new THREE.Group();
-  fistGroup.name = 'rook.rightFist';
-
-  const stoneColor = isWhite ? 0xbaa882 : 0x332f29;
-  const accentColor = isWhite ? 0xd4af37 : 0x5a554e;
-  const mat = new THREE.MeshStandardMaterial({
-    color: stoneColor,
-    roughness: 0.65,
-    metalness: 0.25,
-    emissive: accentColor,
-    emissiveIntensity: 0.2,
-  });
-
-  // 손목/팔뚝
-  const forearmGeom = new THREE.CylinderGeometry(0.08, 0.12, 0.35, 12);
-  forearmGeom.rotateX(Math.PI / 2);
-  const forearm = new THREE.Mesh(forearmGeom, mat);
-  forearm.position.set(0, 0, -0.18);
-  fistGroup.add(forearm);
-
-  // 주먹 덩어리
-  const palmGeom = new THREE.BoxGeometry(0.24, 0.2, 0.26);
-  const palm = new THREE.Mesh(palmGeom, mat);
-  fistGroup.add(palm);
-
-  // 손가락 마디 (4개 손가락이 쥔 형태)
-  const knucklesGeom = new THREE.BoxGeometry(0.25, 0.1, 0.14);
-  const knuckles = new THREE.Mesh(knucklesGeom, mat);
-  knuckles.position.set(0, 0.04, 0.14);
-  fistGroup.add(knuckles);
-
-  // 엄지손가락
-  const thumbGeom = new THREE.BoxGeometry(0.08, 0.14, 0.12);
-  const thumb = new THREE.Mesh(thumbGeom, mat);
-  thumb.position.set(-0.13, 0.02, 0.06);
-  thumb.rotation.z = 0.35;
-  fistGroup.add(thumb);
-
-  return fistGroup;
-}
-
 interface ActiveCombat {
   scene: CombatSceneDef;
   attackerType: PieceType;
@@ -161,7 +118,6 @@ interface ActiveCombat {
   bishopChannelFired: boolean;
   bishopBoltFired: boolean;
   rookCrushFired: boolean;
-  rookFistHolder?: THREE.Group | undefined;
   // Queen(1개: 상체)/King(3개: 머리+몸통 복제 2) 파쇄 연출에서 씬에 직접 추가한 파편들.
   shatterFragments: ShatterFragment[];
 }
@@ -518,7 +474,7 @@ export class CombatDirector {
     }
   }
 
-  /** Rook — 오른손을 뒤로 뺐다가 강력하게 내질러 적 기물을 산산조각 내어 가루로 소멸시킨다(사용자 요청). */
+  /** Rook — 골렘이 오른쪽 어깨와 오른팔을 뒤로 크게 젖혀 힘을 모은 뒤, 전방으로 폭발적인 오른손 펀치 런지를 날려 적 기물을 가루로 분쇄한다(사용자 요청). */
   private runRookFinisher(
     active: ActiveCombat,
     attackerUnit: UnitInstance | undefined,
@@ -538,16 +494,6 @@ export class CombatDirector {
     const dirLen = Math.hypot(dirX, dirZ) || 1;
     const lungeDirX = dirX / dirLen;
     const lungeDirZ = dirZ / dirLen;
-    // 우측 수직 벡터 (오른손 어깨 위치 계산용)
-    const rightDirX = -lungeDirZ;
-    const rightDirZ = lungeDirX;
-
-    // 1) 오른손 주먹(Right Fist) 모델 생성 (피니셔 진입 시 1회 씬에 부착)
-    if (active.rookFistHolder === undefined) {
-      active.rookFistHolder = createRookFist(active.attackerColor === 'w');
-      this.scene.add(active.rookFistHolder);
-    }
-    const fist = active.rookFistHolder;
 
     const shoulderR = attackerUnit?.bones['shoulder.R'];
     const elbowR = attackerUnit?.bones['elbow.R'];
@@ -556,26 +502,15 @@ export class CombatDirector {
       let bodyLunge = 0;
       let bodyTiltY = 0;
       let bodyTiltZ = 0;
-
-      // 주먹 기본 어깨 위치
-      const shoulderX = clampedX + rightDirX * 0.32;
-      const shoulderZ = clampedZ + rightDirZ * 0.32;
-      const fistBaseY = 0.52;
-      const punchRotY = Math.atan2(lungeDirX, lungeDirZ);
+      let bodyLiftY = 0;
 
       if (finisherT <= windupEnd) {
-        // [와인드업] 룩 본체 우측 뒤로 비틀기 + 주먹 뒤로 당기며 장전
+        // 1) [와인드업]: 골렘이 오른쪽 어깨와 오른팔을 뒤로 깊숙이 젖히며 상체를 비틀고 웅크려 힘을 모음
         const wT = easeOutQuad(clamp01(finisherT / windupSec));
-        bodyTiltY = -0.42 * wT;
-        bodyTiltZ = 0.12 * wT;
-
-        fist.position.set(
-          shoulderX - lungeDirX * (0.35 * wT),
-          fistBaseY + 0.22 * wT,
-          shoulderZ - lungeDirZ * (0.35 * wT)
-        );
-        fist.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), punchRotY - 0.4 * wT);
-        fist.scale.setScalar(1.0);
+        bodyLunge = -0.12 * wT; // 하중을 뒤로 장전
+        bodyLiftY = 0.08 * wT;  // 호흡을 가다듬으며 살짝 일어섬
+        bodyTiltY = -0.65 * wT; // 오른쪽 어깨/팔을 뒤로 크게 비틂
+        bodyTiltZ = 0.25 * wT;  // 오른쪽으로 무게중심 쏠림
 
         if (shoulderR !== undefined) {
           shoulderR.rotation.x = THREE.MathUtils.lerp(0, -1.8, wT);
@@ -584,21 +519,12 @@ export class CombatDirector {
         }
         if (elbowR !== undefined) elbowR.rotation.x = THREE.MathUtils.lerp(0, -1.2, wT);
       } else if (finisherT <= strikeEnd) {
-        // [스트라이크] 전방 폭발적 런지 및 오른손 주먹 직격 강타
+        // 2) [스트라이크]: 전방으로 폭발적인 $0.38$칸 런지와 함께 오른쪽 어깨/오른손 주먹을 깊숙이 내지르는 강타
         const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
-        bodyLunge = 0.32 * sT;
-        bodyTiltY = THREE.MathUtils.lerp(-0.42, 0.35, sT);
-        bodyTiltZ = THREE.MathUtils.lerp(0.12, -0.15, sT);
-
-        const targetX = defX - lungeDirX * 0.05;
-        const targetZ = defZ - lungeDirZ * 0.05;
-        fist.position.set(
-          THREE.MathUtils.lerp(shoulderX - lungeDirX * 0.35, targetX, sT),
-          THREE.MathUtils.lerp(fistBaseY + 0.22, 0.45, sT),
-          THREE.MathUtils.lerp(shoulderZ - lungeDirZ * 0.35, targetZ, sT)
-        );
-        fist.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), punchRotY);
-        fist.scale.setScalar(1.0 + 0.2 * sT);
+        bodyLunge = THREE.MathUtils.lerp(-0.12, 0.38, sT);
+        bodyLiftY = THREE.MathUtils.lerp(0.08, 0, sT);
+        bodyTiltY = THREE.MathUtils.lerp(-0.65, 0.55, sT); // 우측에서 전방으로 체중을 실어 팍 회전
+        bodyTiltZ = THREE.MathUtils.lerp(0.25, -0.22, sT);
 
         if (shoulderR !== undefined) {
           shoulderR.rotation.x = THREE.MathUtils.lerp(-1.8, 1.4, sT);
@@ -607,13 +533,12 @@ export class CombatDirector {
         }
         if (elbowR !== undefined) elbowR.rotation.x = THREE.MathUtils.lerp(-1.2, 0.2, sT);
       } else {
-        // [릴랙스] 타격 후 본체 원복 및 주먹 소멸
+        // 3) [릴랙스]: 타격 반동 후 원래 위치 및 자세로 원복
         const rT = easeOutQuad(clamp01((finisherT - strikeEnd) / (ROOK_SHATTER_RELAX_SEC * pacingScale)));
-        bodyLunge = 0.32 * (1 - 0.7 * rT);
-        bodyTiltY = THREE.MathUtils.lerp(0.35, 0, rT);
-        bodyTiltZ = THREE.MathUtils.lerp(-0.15, 0, rT);
-
-        fist.scale.setScalar(Math.max(0.001, 1.2 * (1 - rT)));
+        bodyLunge = 0.38 * (1 - 0.7 * rT);
+        bodyLiftY = 0;
+        bodyTiltY = THREE.MathUtils.lerp(0.55, 0, rT);
+        bodyTiltZ = THREE.MathUtils.lerp(-0.22, 0, rT);
 
         if (shoulderR !== undefined) {
           shoulderR.rotation.x = THREE.MathUtils.lerp(1.4, 0.1, rT);
@@ -625,7 +550,7 @@ export class CombatDirector {
 
       attackerUnit.root.position.set(
         clampedX + lungeDirX * bodyLunge,
-        0,
+        bodyLiftY,
         clampedZ + lungeDirZ * bodyLunge
       );
       attackerUnit.root.rotation.set(0, bodyTiltY, bodyTiltZ);
@@ -1008,19 +933,6 @@ export class CombatDirector {
     this.unitBoard.relocateUnit(attackerFrom, attackerSquare);
     // Queen/King/Rook 파쇄 연출로 씬에 직접 추가해뒀던 파편들도 함께 정리한다.
     for (const frag of shatterFragments) this.scene.remove(frag.holder);
-
-    // 룩의 오른손 주먹(Right Fist) 오브젝트 정리
-    if (this.active?.rookFistHolder !== undefined) {
-      this.scene.remove(this.active.rookFistHolder);
-      this.active.rookFistHolder.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      });
-      this.active.rookFistHolder = undefined;
-    }
 
     // 공격자 회전 및 본 자세 복원
     const attackerUnit = this.unitBoard.getUnitAt(attackerSquare);
