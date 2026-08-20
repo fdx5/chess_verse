@@ -26,13 +26,15 @@ export class MainMenu {
   private format: 'bo1' | 'bo3' = 'bo3';
   private difficulty: Difficulty = 'intermediate';
   private difficultySection: HTMLDivElement;
+  private playerBadgeText: HTMLSpanElement | null = null;
 
   constructor(
     container: HTMLElement,
     onStart: (config: MatchConfig) => void,
     onOpenSettings: () => void,
-    onOpenHistory: () => void,
-    bgmPlayer: YoutubeBgmPlayer
+    onOpenLeaderboard: () => void,
+    bgmPlayer: YoutubeBgmPlayer,
+    onChangeIdentity?: () => void
   ) {
     this.el = document.createElement('div');
     this.el.style.cssText = [
@@ -52,11 +54,11 @@ export class MainMenu {
     const card = document.createElement('div');
     card.style.cssText = [
       'position:relative',
-      'width:min(460px,100%)',
+      'width:min(480px,100%)',
       'display:flex',
       'flex-direction:column',
       'align-items:stretch',
-      'gap:20px',
+      'gap:18px',
       'padding:28px 26px 26px',
       'border-radius:16px',
       'background:linear-gradient(165deg,rgba(58,46,31,0.94),rgba(24,18,11,0.96))',
@@ -68,7 +70,7 @@ export class MainMenu {
     ].join(';');
     this.el.appendChild(card);
 
-    card.appendChild(this.buildToolbar(onOpenHistory, onOpenSettings, bgmPlayer));
+    card.appendChild(this.buildToolbar(onOpenLeaderboard, onOpenSettings, bgmPlayer, onChangeIdentity));
     card.appendChild(this.buildTitleBlock());
 
     const modeSection = this.buildSection(
@@ -118,25 +120,90 @@ export class MainMenu {
     container.appendChild(this.el);
   }
 
-  private buildToolbar(onOpenHistory: () => void, onOpenSettings: () => void, bgmPlayer: YoutubeBgmPlayer): HTMLDivElement {
-    const row = document.createElement('div');
-    row.style.cssText = 'position:absolute;top:14px;right:14px;display:flex;gap:8px;';
+  setPlayerNickname(nickname: string): void {
+    if (this.playerBadgeText) {
+      this.playerBadgeText.textContent = nickname;
+    }
+  }
 
-    const historyBtn = this.buildIconButton('📜', '내 전적');
-    historyBtn.addEventListener('click', onOpenHistory);
-    row.appendChild(historyBtn);
+  private buildToolbar(
+    onOpenLeaderboard: () => void,
+    onOpenSettings: () => void,
+    bgmPlayer: YoutubeBgmPlayer,
+    onChangeIdentity?: () => void
+  ): HTMLDivElement {
+    const row = document.createElement('div');
+    row.style.cssText = 'position:relative;display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;';
+
+    // Left: Player Profile Badge & Switch ID Button
+    const playerBox = document.createElement('div');
+    playerBox.style.cssText = 'display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.35);padding:4px 10px;border-radius:20px;border:1px solid rgba(212,175,55,0.3);';
+
+    const playerIcon = document.createElement('span');
+    playerIcon.textContent = '👤';
+    playerIcon.style.cssText = 'font-size:12px;';
+    playerBox.appendChild(playerIcon);
+
+    this.playerBadgeText = document.createElement('span');
+    this.playerBadgeText.textContent = '플레이어';
+    this.playerBadgeText.style.cssText = 'font-weight:600;font-size:12px;color:' + GOLD_BRIGHT + ';max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    playerBox.appendChild(this.playerBadgeText);
+
+    if (onChangeIdentity) {
+      const switchBtn = document.createElement('button');
+      switchBtn.textContent = 'ID 변경';
+      switchBtn.title = '다른 ID로 로그인하거나 새 ID를 생성합니다';
+      switchBtn.style.cssText = 'background:none;border:none;color:#93C5FD;font-size:11px;cursor:pointer;padding:0 0 0 4px;text-decoration:underline;';
+      switchBtn.addEventListener('click', onChangeIdentity);
+      playerBox.appendChild(switchBtn);
+    }
+    row.appendChild(playerBox);
+
+    // Right: Action Buttons (Emphasized Leaderboard Button + Settings + BGM)
+    const btnBox = document.createElement('div');
+    btnBox.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
+    // 사용자 요청 §순위표 버튼 시각적 강조 (금빛 펄스 뱃지 & 아이콘)
+    const leaderboardBtn = document.createElement('button');
+    leaderboardBtn.innerHTML = '<span style="font-size:15px;">🏆</span> <span style="font-weight:700;letter-spacing:0.3px;">순위표</span>';
+    leaderboardBtn.title = '명예의 전당 및 대전 전적 보기';
+    leaderboardBtn.style.cssText = [
+      'display:flex',
+      'align-items:center',
+      'gap:5px',
+      'padding:6px 12px',
+      'border-radius:20px',
+      'border:1px solid ' + GOLD,
+      'background:linear-gradient(135deg,rgba(212,175,55,0.35),rgba(107,74,47,0.5))',
+      'color:#FFF',
+      'font:600 12px system-ui,sans-serif',
+      'cursor:pointer',
+      'box-shadow:0 0 12px rgba(212,175,55,0.35)',
+      'transition:all 0.15s ease',
+    ].join(';');
+    leaderboardBtn.addEventListener('mouseenter', () => {
+      leaderboardBtn.style.transform = 'scale(1.05)';
+      leaderboardBtn.style.boxShadow = '0 0 18px rgba(212,175,55,0.6)';
+    });
+    leaderboardBtn.addEventListener('mouseleave', () => {
+      leaderboardBtn.style.transform = 'scale(1)';
+      leaderboardBtn.style.boxShadow = '0 0 12px rgba(212,175,55,0.35)';
+    });
+    leaderboardBtn.addEventListener('click', onOpenLeaderboard);
+    btnBox.appendChild(leaderboardBtn);
 
     const settingsBtn = this.buildIconButton('⚙️', '설정');
     settingsBtn.addEventListener('click', onOpenSettings);
-    row.appendChild(settingsBtn);
+    btnBox.appendChild(settingsBtn);
 
     const bgmBtn = this.buildIconButton(bgmPlayer.isPlaying() ? '🔊' : '🔇', 'BGM 켜기/끄기');
     bgmBtn.addEventListener('click', () => void bgmPlayer.toggle());
     bgmPlayer.onStateChange((playing) => {
       bgmBtn.textContent = playing ? '🔊' : '🔇';
     });
-    row.appendChild(bgmBtn);
+    btnBox.appendChild(bgmBtn);
 
+    row.appendChild(btnBox);
     return row;
   }
 

@@ -13,21 +13,21 @@ import { makeBone, attachPart, collectBones, cylinderGeom, latheGeom, roundedBox
  * 팔/부유 파편 본을 제거해 `idle.ts`의 `rookIdle`도 `chest.rotation`만 남기도록 함께 수정했다.
  */
 export function buildRook(color: Color, _quality: QualityTier, geometryCache: GeometryCache, materialCache: MaterialCache): UnitInstance {
-  const tint = color === 'w' ? '#E5C075' : '#2570B0';
-  // 사용자 요청 §기물별 다채로운 리디자인 — 웜 마블 샌드스톤(백) / 화산 현무암 그라나이트(흑)
-  const stoneColor = color === 'w' ? '#EBE2D5' : '#2B2826';
-  const stoneRingColor = color === 'w' ? '#E5BF65' : '#48A8F0';
+  const tint = color === 'w' ? '#FFE082' : '#1D4ED8';
+  // 사용자 요청 §흑/백 룩 차별화 — 순백의 화이트 마블 골드(백) vs 딥 흑요석 다크 건메탈 & 딥 사파이어(흑)
+  const stoneColor = color === 'w' ? '#FAF6EE' : '#151820';
+  const stoneRingColor = color === 'w' ? '#F5C842' : '#1D6FB8';
   const stone = materialCache.getOrCreate(
     `rook.stone.${color}`,
     () =>
       new THREE.MeshPhysicalMaterial({
         color: stoneColor,
-        roughness: 0.65,
-        metalness: 0.15,
-        clearcoat: 0.35,
-        clearcoatRoughness: 0.3,
+        roughness: color === 'w' ? 0.38 : 0.45,
+        metalness: color === 'w' ? 0.35 : 0.6,
+        clearcoat: 0.5,
+        clearcoatRoughness: 0.15,
         emissive: new THREE.Color(tint),
-        emissiveIntensity: color === 'w' ? 0.08 : 0.1,
+        emissiveIntensity: color === 'w' ? 0.12 : 0.08,
       })
   );
   const stoneRing = materialCache.getOrCreate(
@@ -35,12 +35,12 @@ export function buildRook(color: Color, _quality: QualityTier, geometryCache: Ge
     () =>
       new THREE.MeshPhysicalMaterial({
         color: stoneRingColor,
-        roughness: 0.45,
-        metalness: 0.5,
-        clearcoat: 0.6,
-        clearcoatRoughness: 0.15,
+        roughness: 0.3,
+        metalness: 0.65,
+        clearcoat: 0.7,
+        clearcoatRoughness: 0.1,
         emissive: new THREE.Color(tint),
-        emissiveIntensity: color === 'w' ? 0.15 : 0.2,
+        emissiveIntensity: color === 'w' ? 0.2 : 0.12,
       })
   );
   const doorway = materialCache.getOrCreate('rook.doorway', () => new THREE.MeshStandardMaterial({ color: '#1B1712', roughness: 0.95, metalness: 0 }));

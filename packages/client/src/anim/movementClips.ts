@@ -99,16 +99,20 @@ function knightTwoArcPath(start: readonly [number, number], end: readonly [numbe
   return new THREE.Vector3(x, y, z);
 }
 
-// 사용자 요청 — 이동 속도가 너무 빠르다는 피드백으로 전 기물 공통 배율만큼 늦춤(상대적 페이싱은 유지).
-const SPEED_SLOWDOWN = 1.35;
+// 사용자 요청 §유닛 이동 속도 조절 — 기물이 너무 빨리 이동해 시점을 놓치는 문제를 방지하고 궤적을 편안히 감상할 수 있도록 조정
+const SPEED_SLOWDOWN = 1.6;
 
 export const MOVEMENT_PROFILES: Record<PieceType, MovementProfile> = {
-  // 사용자 요청 — 폰 이동 속도를 절반으로(계수를 2배로).
-  p: { duration: (sq) => (0.7 + 0.6 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
-  // 사용자 요청 — 나이트 이동 속도를 절반으로(기존 0.65의 2배 소요시간).
-  n: { duration: () => 1.3 * SPEED_SLOWDOWN, path: knightTwoArcPath },
-  b: { duration: (sq) => (0.4 + 0.22 * sq) * SPEED_SLOWDOWN, path: bishopGlidePath },
-  r: { duration: (sq) => 0.45 * sq * SPEED_SLOWDOWN, path: rookSteppedPath },
-  q: { duration: (sq) => (0.3 + 0.24 * sq) * SPEED_SLOWDOWN, path: queenSCurvePath },
-  k: { duration: (sq) => (0.45 + 0.32 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
+  // 폰: 1~2칸 전진 시 약 1.5s ~ 2.2s 소요
+  p: { duration: (sq) => (0.85 + 0.5 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
+  // 나이트: 2단 포물선 도약 약 1.75s 소요
+  n: { duration: () => 1.1 * SPEED_SLOWDOWN, path: knightTwoArcPath },
+  // 비숍: 대각선 활공 약 1.2s ~ 2.5s 소요
+  b: { duration: (sq) => (0.6 + 0.22 * sq) * SPEED_SLOWDOWN, path: bishopGlidePath },
+  // 룩: 직선 스톰프 진격 약 1.2s ~ 3.2s 소요
+  r: { duration: (sq) => (0.4 + 0.35 * sq) * SPEED_SLOWDOWN, path: rookSteppedPath },
+  // 퀸: S자 곡선 활주 약 1.2s ~ 2.8s 소요
+  q: { duration: (sq) => (0.65 + 0.24 * sq) * SPEED_SLOWDOWN, path: queenSCurvePath },
+  // 킹: 위엄 있는 1칸 보행 약 1.5s 소요
+  k: { duration: (sq) => (0.7 + 0.3 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
 };

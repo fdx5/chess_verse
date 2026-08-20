@@ -19,7 +19,7 @@ export class HUD {
   private readonly capturedPanel = new CapturedPiecesPanel();
   private readonly promotionModal: HTMLDivElement;
 
-  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void) {
+  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void, onResetCamera?: () => void) {
     this.root = document.createElement('div');
     this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
     this.root.appendChild(this.turnIndicator.el);
@@ -51,6 +51,16 @@ export class HUD {
       bgmBtn.textContent = playing ? 'BGM 끄기' : 'BGM 켜기';
     });
     topLeftRow.appendChild(bgmBtn);
+
+    // 사용자 요청 §시점 초기화 버튼 — 상단 BGM 버튼 오른쪽에 배치
+    const resetCamBtn = document.createElement('button');
+    resetCamBtn.textContent = '시점 초기화';
+    resetCamBtn.title = '카메라를 기본 대전 시점으로 초기화합니다';
+    resetCamBtn.style.cssText = cornerBtnStyle;
+    resetCamBtn.addEventListener('click', () => {
+      onResetCamera?.();
+    });
+    topLeftRow.appendChild(resetCamBtn);
 
     const exitBtn = document.createElement('button');
     exitBtn.textContent = '메뉴로 나가기';

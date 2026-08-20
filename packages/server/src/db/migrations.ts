@@ -65,3 +65,29 @@ CREATE INDEX IF NOT EXISTS idx_games_match         ON games(match_id);
 
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES ('version', '1');
 `;
+
+/** 사용자 원칙 §DB 영구성 보장 — 기존 데이터를 일절 삭제하지 않고 누락된 컬럼만 안전하게 추가 */
+export function applyMigrations(db: import('better-sqlite3').Database): void {
+  db.exec(MIGRATION_001_INIT);
+
+  const matchCols = db.prepare(`PRAGMA table_info(matches)`).all() as { name: string }[];
+  const matchColNames = new Set(matchCols.map((c) => c.name));
+
+  if (!matchColNames.has('pieces_lost_white')) {
+    db.exec(`ALTER TABLE matches ADD COLUMN pieces_lost_white INTEGER NOT NULL DEFAULT 0;`);
+  }
+  if (!matchColNames.has('pieces_lost_black')) {
+    db.exec(`ALTER TABLE matches ADD COLUMN pieces_lost_black INTEGER NOT NULL DEFAULT 0;`);
+  }
+  if (!matchColNames.has('duration_ms')) {
+    db.exec(`ALTER TABLE matches ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;`);
+  }
+  if (!matchColNames.has('leaderboard_score')) {
+    db.exec(`ALTER TABLE matches ADD COLUMN leaderboard_score INTEGER NOT NULL DEFAULT 0;`);
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_matches_leaderboard ON matches(source, result, cpu_difficulty, leaderboard_score DESC);
+    CREATE INDEX IF NOT EXISTS idx_players_nickname ON players(nickname);
+  `);
+}

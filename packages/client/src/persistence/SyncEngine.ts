@@ -25,6 +25,9 @@ function toSyncDto(match: LocalMatchRecord, games: readonly LocalGameRecord[]): 
     outcome: match.outcome,
     startedAt: match.startedAt,
     endedAt: match.endedAt,
+    piecesLostMine: match.piecesLostMine,
+    durationSeconds: match.durationSeconds,
+    score: match.score,
     games: games.map((g) => ({
       gameIndex: g.gameIndex,
       myColor: g.myColor,

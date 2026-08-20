@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
-import { MIGRATION_001_INIT } from './migrations.js';
+import { applyMigrations } from './migrations.js';
 
 /** D10-4 §better-sqlite3 — 동기 API, 임베디드 파일 DB. PRAGMA는 설계서 고정값 그대로. */
 export function openDatabase(filePath: string): Database.Database {
@@ -11,6 +11,6 @@ export function openDatabase(filePath: string): Database.Database {
   db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
-  db.exec(MIGRATION_001_INIT);
+  applyMigrations(db);
   return db;
 }

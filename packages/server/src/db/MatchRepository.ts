@@ -59,6 +59,9 @@ export interface SyncedMatchInput {
   outcome: MatchOutcome;
   startedAt: number;
   endedAt: number;
+  piecesLostMine?: number | undefined;
+  durationSeconds?: number | undefined;
+  score?: number | undefined;
   games: SyncedGameInput[];
 }
 
@@ -149,13 +152,20 @@ export class MatchRepository {
     const result: 'white' | 'black' | 'draw' | 'aborted' =
       input.outcome === 'aborted' ? 'aborted' : input.outcome === 'draw' ? 'draw' : input.outcome === 'win' ? colorToResult(myColor) : colorToResult(opponentColor);
 
+    const piecesLostWhite = myColor === 'w' ? (input.piecesLostMine ?? 0) : 0;
+    const piecesLostBlack = myColor === 'b' ? (input.piecesLostMine ?? 0) : 0;
+    const durationMs = input.durationSeconds !== undefined ? input.durationSeconds * 1000 : (input.endedAt - input.startedAt);
+    const leaderboardScore = input.score ?? 0;
+
     const insertMatch = this.db.prepare(
       `INSERT INTO matches (id, source, format, player_white_id, player_black_id, white_label, black_label,
          cpu_difficulty, time_control, score_white, score_black, result, game_count, started_at, ended_at,
-         verified, submitted_by_player_id, client_local_match_id, created_at)
+         verified, submitted_by_player_id, client_local_match_id, created_at,
+         pieces_lost_white, pieces_lost_black, duration_ms, leaderboard_score)
        VALUES (@id, @source, @format, @playerWhiteId, @playerBlackId, @whiteLabel, @blackLabel,
          @cpuDifficulty, @timeControl, @scoreWhite, @scoreBlack, @result, @gameCount, @startedAt, @endedAt,
-         0, @submittedByPlayerId, @clientLocalMatchId, @createdAt)`
+         0, @submittedByPlayerId, @clientLocalMatchId, @createdAt,
+         @piecesLostWhite, @piecesLostBlack, @durationMs, @leaderboardScore)`
     );
     const insertGame = this.db.prepare(
       `INSERT INTO games (id, match_id, game_index, white_player_id, black_player_id, result, reason,
@@ -184,6 +194,10 @@ export class MatchRepository {
         submittedByPlayerId: input.submittedByPlayerId,
         clientLocalMatchId: input.clientLocalMatchId,
         createdAt: now,
+        piecesLostWhite,
+        piecesLostBlack,
+        durationMs,
+        leaderboardScore,
       });
       for (const g of input.games) {
         insertGame.run({

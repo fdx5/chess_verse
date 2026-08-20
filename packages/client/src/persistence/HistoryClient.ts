@@ -50,6 +50,24 @@ export class HistoryClient {
     return (await res.json()) as PlayerStatsDto;
   }
 
+  /** 난이도별 순위표 조회 */
+  async fetchLeaderboard(difficulty: import('@battle-chess/protocol').Difficulty, limit = 50): Promise<import('@battle-chess/protocol').LeaderboardPageDto> {
+    const res = await fetch(`${this.baseUrl}/api/v1/leaderboard?difficulty=${difficulty}&limit=${limit}`);
+    if (!res.ok) throw new Error(`fetchLeaderboard failed: ${res.status}`);
+    return (await res.json()) as import('@battle-chess/protocol').LeaderboardPageDto;
+  }
+
+  /** 닉네임 중복 검사 */
+  async checkNickname(nickname: string, playerId?: string): Promise<import('@battle-chess/protocol').CheckNicknameResponseDto> {
+    const res = await fetch(`${this.baseUrl}/api/v1/players/check-nickname`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ nickname, playerId }),
+    });
+    if (!res.ok) throw new Error(`checkNickname failed: ${res.status}`);
+    return (await res.json()) as import('@battle-chess/protocol').CheckNicknameResponseDto;
+  }
+
   async deleteAccount(identity: PlayerIdentity): Promise<void> {
     const res = await fetch(`${this.baseUrl}/api/v1/players/${identity.playerId}`, { method: 'DELETE', headers: this.authHeaders(identity) });
     if (!res.ok && res.status !== 204) throw new Error(`deleteAccount failed: ${res.status}`);

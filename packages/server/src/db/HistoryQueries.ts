@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { Color } from '@battle-chess/chess-core';
-import type { GameEndReason, MatchDetailDto, MatchFormat, MatchHistoryPage, MatchOutcome, MatchSource, MatchSummaryDto, PlayerStatsBucket, PlayerStatsDto, TimeControlKind } from '@battle-chess/protocol';
+import type { Difficulty, GameEndReason, MatchDetailDto, MatchFormat, MatchHistoryPage, MatchOutcome, MatchSource, MatchSummaryDto, PlayerStatsBucket, PlayerStatsDto, TimeControlKind } from '@battle-chess/protocol';
 
 interface MatchRow {
   id: string;
@@ -142,4 +142,58 @@ export class HistoryQueries {
 
     return { playerId, nickname: player.nickname, verified, local, bySource, firstPlayedAt, lastPlayedAt };
   }
+
+  /** CPU 대전 난이도별 순위표 조회 (점수 내림차순, 소요시간 오름차순) */
+  getLeaderboard(difficulty: Difficulty, limit = 50): import('@battle-chess/protocol').LeaderboardEntryDto[] {
+    const cappedLimit = Math.min(Math.max(limit, 1), 100);
+    const rows = this.db.prepare(`
+      SELECT 
+        m.id as match_id,
+        COALESCE(m.player_white_id, m.player_black_id, m.submitted_by_player_id) as player_id,
+        COALESCE(p.nickname, m.white_label, m.black_label, '플레이어') as nickname,
+        m.cpu_difficulty,
+        CASE WHEN m.duration_ms > 0 THEN CAST(m.duration_ms / 1000 AS INTEGER) ELSE CAST((m.ended_at - m.started_at) / 1000 AS INTEGER) END as duration_seconds,
+        CASE WHEN m.player_white_id IS NOT NULL THEN m.pieces_lost_white ELSE m.pieces_lost_black END as pieces_lost,
+        m.leaderboard_score as score,
+        m.ended_at
+      FROM matches m
+      LEFT JOIN players p ON p.id = COALESCE(m.player_white_id, m.player_black_id, m.submitted_by_player_id)
+      WHERE m.source = 'cpu' 
+        AND m.cpu_difficulty = ?
+        AND (
+          (m.player_white_id IS NOT NULL AND m.result = 'white') OR
+          (m.player_black_id IS NOT NULL AND m.result = 'black') OR
+          (m.score_white > m.score_black)
+        )
+        AND m.leaderboard_score > 0
+      ORDER BY m.leaderboard_score DESC, duration_seconds ASC, m.ended_at ASC
+      LIMIT ?
+    `).all(difficulty, cappedLimit) as {
+      match_id: string;
+      player_id: string;
+      nickname: string;
+      cpu_difficulty: Difficulty;
+      duration_seconds: number;
+      pieces_lost: number;
+      score: number;
+      ended_at: number;
+    }[];
+
+    return rows.map((r, index) => ({
+      rank: index + 1,
+      matchId: r.match_id,
+      playerId: r.player_id,
+      nickname: r.nickname === '(나)' ? (pNickname(this.db, r.player_id) ?? '플레이어') : r.nickname,
+      cpuDifficulty: r.cpu_difficulty,
+      durationSeconds: Math.max(1, r.duration_seconds),
+      piecesLost: r.pieces_lost,
+      score: r.score,
+      endedAt: r.ended_at,
+    }));
+  }
+}
+
+function pNickname(db: import('better-sqlite3').Database, playerId: string): string | null {
+  const row = db.prepare('SELECT nickname FROM players WHERE id = ?').get(playerId) as { nickname: string } | undefined;
+  return row?.nickname ?? null;
 }

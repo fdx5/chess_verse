@@ -81,6 +81,9 @@ function insertOne(deps: HistoryApiDeps, submittedByPlayerId: string, m: SyncMat
     outcome: m.outcome,
     startedAt: m.startedAt,
     endedAt: m.endedAt,
+    piecesLostMine: m.piecesLostMine,
+    durationSeconds: m.durationSeconds,
+    score: m.score,
     games: m.games,
   });
   return { clientLocalMatchId: m.clientLocalMatchId, serverMatchId: result.serverMatchId, conflict: result.conflict };
@@ -104,6 +107,31 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
   const ip = req.socket.remoteAddress ?? 'unknown';
 
   try {
+    if (url.pathname === '/api/v1/players/check-nickname' && req.method === 'POST') {
+      const body = await readBody(req, MAX_IDENTIFY_BODY_BYTES);
+      if (body === null) {
+        sendJson(res, 413, { error: 'PAYLOAD_TOO_LARGE' });
+        return true;
+      }
+      const parsed = JSON.parse(body) as { nickname?: string; playerId?: string };
+      const nickname = normalizeNickname(parsed.nickname);
+      if (nickname === null) {
+        sendJson(res, 200, { available: false, reason: 'invalid_length' });
+        return true;
+      }
+      const available = deps.playerRepo.isNicknameAvailable(nickname, parsed.playerId);
+      sendJson(res, 200, { available, reason: available ? undefined : 'taken' });
+      return true;
+    }
+
+    if (url.pathname === '/api/v1/leaderboard' && req.method === 'GET') {
+      const difficulty = (url.searchParams.get('difficulty') ?? 'intermediate') as import('@battle-chess/protocol').Difficulty;
+      const limit = Number(url.searchParams.get('limit') ?? 50);
+      const entries = deps.historyQueries.getLeaderboard(difficulty, limit);
+      sendJson(res, 200, { difficulty, entries, totalCount: entries.length });
+      return true;
+    }
+
     if (url.pathname === '/api/v1/players/identify' && req.method === 'POST') {
       if (!checkRateLimit(`identify:${ip}`, 10)) {
         sendJson(res, 429, { error: 'RATE_LIMITED' });

@@ -46,6 +46,7 @@ import { ResultModal } from './ui/ResultModal';
 import { MatchmakingScreen } from './ui/MatchmakingScreen';
 import { NicknameModal } from './ui/NicknameModal';
 import { HistoryScreen } from './ui/HistoryScreen';
+import { LeaderboardScreen } from './ui/LeaderboardScreen';
 import { PerfOverlay } from './ui/PerfOverlay';
 import { YoutubeBgmPlayer } from './audio/YoutubeBgmPlayer';
 import { IndexedDbStore } from './persistence/IndexedDbStore';
@@ -132,7 +133,7 @@ app.addEventListener('click', (ev) => {
 });
 
 const bgmPlayer = new YoutubeBgmPlayer(app);
-const hud = new HUD(app, bgmPlayer, () => exitToMenu());
+const hud = new HUD(app, bgmPlayer, () => exitToMenu(), () => cameraRig.resetView());
 const intermissionScreen = new IntermissionScreen(app);
 const resultModal = new ResultModal(app);
 const matchmakingScreen = new MatchmakingScreen(app);
@@ -676,17 +677,26 @@ const settingsScreen = new SettingsScreen(app, {
     window.location.reload();
   },
 });
-const nicknameModal = new NicknameModal(app);
-const historyScreen = new HistoryScreen(app, historyStore, () => mainMenu.show());
+const nicknameModal = new NicknameModal(app, historyClient);
+const leaderboardScreen = new LeaderboardScreen(app, historyStore, historyClient, () => mainMenu.show());
 const mainMenu = new MainMenu(
   app,
   handleStartFromMenu,
   () => settingsScreen.show(),
   () => {
     mainMenu.hide();
-    void historyScreen.show();
+    void leaderboardScreen.show('history');
   },
-  bgmPlayer
+  bgmPlayer,
+  () => {
+    mainMenu.hide();
+    nicknameModal.show((nickname) => {
+      const identity = createIdentity(nickname);
+      nicknameModal.hide();
+      mainMenu.show();
+      void onIdentityReady(identity);
+    }, true, () => mainMenu.show(), currentIdentity?.nickname);
+  }
 );
 
 /** 지금 클릭/탭/드래그를 받아도 되는 세션을 반환한다(없으면 null) — 로컬/CPU/온라인 공통 게이팅. */
@@ -837,6 +847,7 @@ mainMenu.hide();
 
 async function onIdentityReady(identity: PlayerIdentity): Promise<void> {
   currentIdentity = identity;
+  mainMenu.setPlayerNickname(identity.nickname);
   syncEngine.setIdentity(identity);
   syncEngine.start();
   try {

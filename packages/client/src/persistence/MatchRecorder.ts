@@ -2,7 +2,7 @@ import type { Color } from '@battle-chess/chess-core';
 import type { Difficulty } from '../ai/AiWorkerHandle';
 import type { LocalGameRecord, MatchFormat, MatchOutcome, MatchSource } from '../game/MatchState';
 import type { IndexedDbStore } from './IndexedDbStore';
-import type { LocalMatchRecord } from './schema';
+import { calculateLeaderboardScore, type LocalMatchRecord } from './schema';
 
 export interface MatchRecordInput {
   localMatchId: string;
@@ -27,6 +27,19 @@ export interface MatchRecordInput {
 
 const APP_VERSION = '0.1.0';
 
+function countPiecesLostFromFen(fen: string, myColor: Color): number {
+  const boardPart = fen.split(' ')[0] ?? '';
+  let count = 0;
+  for (const char of boardPart) {
+    if (myColor === 'w') {
+      if (char >= 'A' && char <= 'Z') count++;
+    } else {
+      if (char >= 'a' && char <= 'z') count++;
+    }
+  }
+  return Math.max(0, 16 - count);
+}
+
 /** D10-2/D10-9 §MatchRecorder — `game:matchEnded`/`net:matchEnd` 수신 시 이 record()를 호출한다. */
 export class MatchRecorder {
   constructor(
@@ -35,6 +48,14 @@ export class MatchRecorder {
   ) {}
 
   async record(input: MatchRecordInput): Promise<LocalMatchRecord | null> {
+    const lastGame = input.games[input.games.length - 1];
+    const piecesLostMine = lastGame ? countPiecesLostFromFen(lastGame.finalFen, input.myColorGame1) : 0;
+    const durationSeconds = Math.max(1, Math.round((input.endedAt - input.startedAt) / 1000));
+    const score =
+      input.source === 'cpu' && input.outcome === 'win'
+        ? calculateLeaderboardScore(durationSeconds, piecesLostMine, input.cpuDifficulty)
+        : undefined;
+
     const record: LocalMatchRecord = {
       localMatchId: input.localMatchId,
       ...(input.serverMatchId !== undefined ? { serverMatchId: input.serverMatchId } : {}),
@@ -53,6 +74,9 @@ export class MatchRecorder {
       gameCount: input.games.length,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
+      piecesLostMine,
+      durationSeconds,
+      ...(score !== undefined ? { score } : {}),
       syncState: input.source === 'online' ? 'synced' : 'local',
       syncAttempts: 0,
       appVersion: APP_VERSION,

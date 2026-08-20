@@ -105,6 +105,9 @@ export interface SyncMatchDto {
   outcome: MatchOutcome;
   startedAt: number;
   endedAt: number;
+  piecesLostMine?: number | undefined;
+  durationSeconds?: number | undefined;
+  score?: number | undefined;
   games: SyncGameDto[];
 }
 
@@ -120,4 +123,34 @@ export interface SyncUploadResult {
 
 export interface SyncResponseDto {
   results: SyncUploadResult[];
+}
+
+// ── GET /api/v1/leaderboard ────────────────────────────────────────────────
+export interface LeaderboardEntryDto {
+  rank: number;
+  matchId: string;
+  playerId: string;
+  nickname: string;
+  cpuDifficulty: Difficulty;
+  durationSeconds: number;
+  piecesLost: number;
+  score: number;
+  endedAt: number;
+}
+
+export interface LeaderboardPageDto {
+  difficulty: Difficulty;
+  entries: LeaderboardEntryDto[];
+  totalCount: number;
+}
+
+// ── POST /api/v1/players/check-nickname ───────────────────────────────────
+export interface CheckNicknameRequestDto {
+  nickname: string;
+  playerId?: string;
+}
+
+export interface CheckNicknameResponseDto {
+  available: boolean;
+  reason?: 'taken' | 'invalid_length' | 'invalid_format';
 }

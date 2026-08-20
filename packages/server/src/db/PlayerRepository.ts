@@ -66,6 +66,20 @@ export class PlayerRepository {
     return row?.nickname ?? null;
   }
 
+  /** 닉네임 중복 여부 확인 (대소문자 무시) */
+  isNicknameAvailable(nickname: string, excludePlayerId?: string): boolean {
+    const row = this.db.prepare('SELECT id FROM players WHERE nickname = ? COLLATE NOCASE').get(nickname) as { id: string } | undefined;
+    if (row === undefined) return true;
+    if (excludePlayerId !== undefined && row.id === excludePlayerId) return true;
+    return false;
+  }
+
+  /** 닉네임으로 플레이어 레코드 조회 */
+  findByNickname(nickname: string): { id: string; nickname: string; secret_hash: string | null } | null {
+    const row = this.db.prepare('SELECT id, nickname, secret_hash FROM players WHERE nickname = ? COLLATE NOCASE').get(nickname) as PlayerRow | undefined;
+    return row ?? null;
+  }
+
   deleteCascade(playerId: string): void {
     this.db.prepare('DELETE FROM players WHERE id = ?').run(playerId);
   }

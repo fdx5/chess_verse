@@ -206,16 +206,16 @@ export function getUnitPalette(type: PieceType, color: Color, materialCache: Mat
   ) as THREE.MeshPhysicalMaterial;
 
   const primaryColors: Record<PieceType, string> = isWhite
-    ? { p: '#DDF0E6', n: '#DCE8F6', b: '#EADFF5', r: '#EBE2D5', q: '#F7E0E7', k: '#E3E7FA' }
-    : { p: '#3A4250', n: '#2C3444', b: '#301F3B', r: '#2B2826', q: '#3E1624', k: '#24243C' };
+    ? { p: '#DDF0E6', n: '#DCE8F6', b: '#EADFF5', r: '#FAF6EE', q: '#F7E0E7', k: '#E3E7FA' }
+    : { p: '#4A566A', n: '#323E54', b: '#3C244E', r: '#151820', q: '#52182B', k: '#303052' };
 
   const accentColors: Record<PieceType, string> = isWhite
-    ? { p: '#E8D08D', n: '#E8C568', b: '#98F0DB', r: '#E5BF65', q: '#FFD768', k: '#FAD25A' }
-    : { p: '#9EB0C4', n: '#D4AA4F', b: '#BC5FF5', r: '#48A8F0', q: '#D8A43C', k: '#DDB045' };
+    ? { p: '#E8D08D', n: '#E8C568', b: '#98F0DB', r: '#F5C842', q: '#FFD768', k: '#FAD25A' }
+    : { p: '#B0C2D8', n: '#E8B848', b: '#D070FF', r: '#1D6FB8', q: '#E8A845', k: '#E8B848' };
 
   const subtleColors: Record<PieceType, string> = isWhite
-    ? { p: '#EAE2D5', n: '#E2DDD6', b: '#EAE4DC', r: '#D6C8B8', q: '#FFF3F6', k: '#F5F6FC' }
-    : { p: '#222832', n: '#1C222E', b: '#1C1224', r: '#181615', q: '#200B14', k: '#141422' };
+    ? { p: '#FAF4E8', n: '#F5EFE6', b: '#FAF6EE', r: '#EDE5D8', q: '#FFF5F8', k: '#F8F9FD' }
+    : { p: '#222A36', n: '#1C2534', b: '#22142E', r: '#0E1015', q: '#2C0D17', k: '#1A1A30' };
 
   const primary = materialCache.getOrCreate(
     `unitPalette.${color}.${type}.primary`,
