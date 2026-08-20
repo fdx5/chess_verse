@@ -488,6 +488,9 @@ export class CombatDirector {
     const [clampedX, clampedZ] = active.clampedEnd;
     const [defX, defZ] = active.defenderWorld;
 
+    // 사용자 요청 §록 전투 사운드 — 록의 피니셔/전투 연출 진입 시 rook.mp3를 즉시 재생한다.
+    this.playThudOnce(active);
+
     if (attackerUnit !== undefined) {
       if (finisherT <= windupEnd) {
         const wT = easeOutQuad(clamp01(finisherT / windupSec));
@@ -505,11 +508,14 @@ export class CombatDirector {
         );
         if (sT >= 0.999 && !active.rookCrushFired && defenderUnit !== undefined) {
           active.rookCrushFired = true;
-          this.playThudOnce(active);
           defenderUnit.root.scale.set(1.5, 0.06, 1.5);
         }
       } else {
         attackerUnit.root.position.set(defX, 0, defZ);
+        if (!active.rookCrushFired && defenderUnit !== undefined) {
+          active.rookCrushFired = true;
+          defenderUnit.root.scale.set(1.5, 0.06, 1.5);
+        }
       }
     }
 

@@ -1,0 +1,33 @@
+﻿# Build outputs & dependencies
+node_modules/
+dist/
+*.tsbuildinfo
+.git/
+
+# 3D Binary & Model Assets
+public/models/
+packages/client/public/models/
+*.glb
+*.gltf
+*.bin
+*.obj
+*.fbx
+
+# Audio Assets
+public/sound/
+packages/client/public/sound/
+sound/
+*.mp3
+*.wav
+*.ogg
+
+# Texture & Environment Images
+public/env/
+packages/client/public/env/
+*.hdr
+*.jpg
+*.png
+*.webp
+
+# 36 Combat Scenes Matrix (Use lightweight docs instead of raw files)
+packages/client/src/anim/data/combatScenes/
