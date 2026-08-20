@@ -45,7 +45,7 @@ const BISHOP_WINDUP_SEC = 0.35;
 const BISHOP_STRIKE_SEC = 0.12;
 const ROOK_WINDUP_SEC = 0.25;
 const ROOK_STRIKE_SEC = 0.16;
-const ROOK_CRUSH_HOLD_SEC = 0.12;
+const ROOK_SHATTER_RELAX_SEC = 0.4;
 const QUEEN_WINDUP_SEC = 0.16;
 const QUEEN_STRIKE_SEC = 0.14;
 const QUEEN_SHATTER_RELAX_SEC = 0.4;
@@ -471,7 +471,7 @@ export class CombatDirector {
     }
   }
 
-  /** Rook — 공중에 떠올랐다가 방어자 칸으로 그대로 내리눌러 납작하게 프레스한다(사용자 요청). */
+  /** Rook — 오른손을 뒤로 뺐다가 강력하게 내질러 적 기물을 산산조각 내어 가루로 소멸시킨다(사용자 요청). */
   private runRookFinisher(
     active: ActiveCombat,
     attackerUnit: UnitInstance | undefined,
@@ -481,50 +481,113 @@ export class CombatDirector {
   ): void {
     const windupSec = ROOK_WINDUP_SEC * pacingScale;
     const strikeSec = ROOK_STRIKE_SEC * pacingScale;
-    const holdSec = ROOK_CRUSH_HOLD_SEC * pacingScale;
     const windupEnd = windupSec;
     const strikeEnd = windupEnd + strikeSec;
-    const holdEnd = strikeEnd + holdSec;
     const [clampedX, clampedZ] = active.clampedEnd;
     const [defX, defZ] = active.defenderWorld;
 
-    // 사용자 요청 §록 전투 사운드 — 록의 피니셔/전투 연출 진입 시 rook.mp3를 즉시 재생한다.
-    this.playThudOnce(active);
+    const dirX = defX - clampedX;
+    const dirZ = defZ - clampedZ;
+    const dirLen = Math.hypot(dirX, dirZ) || 1;
+    const lungeDirX = dirX / dirLen;
+    const lungeDirZ = dirZ / dirLen;
 
     if (attackerUnit !== undefined) {
+      const shoulderR = attackerUnit.bones['shoulder.R'];
+      const elbowR = attackerUnit.bones['elbow.R'];
+      let lunge = 0;
+
       if (finisherT <= windupEnd) {
+        // 1) 와인드업: 오른팔을 뒤로 당기며 주먹을 쥐는 강력한 펀치 준비 자세
         const wT = easeOutQuad(clamp01(finisherT / windupSec));
-        attackerUnit.root.position.set(
-          THREE.MathUtils.lerp(clampedX, defX, wT * 0.4),
-          LIFT_HEIGHT * 1.3 * wT,
-          THREE.MathUtils.lerp(clampedZ, defZ, wT * 0.4)
-        );
+        if (shoulderR !== undefined) {
+          shoulderR.rotation.x = THREE.MathUtils.lerp(0, -1.8, wT);
+          shoulderR.rotation.y = THREE.MathUtils.lerp(0, -0.6, wT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(0, 0.4, wT);
+        }
+        if (elbowR !== undefined) elbowR.rotation.x = THREE.MathUtils.lerp(0, -1.2, wT);
       } else if (finisherT <= strikeEnd) {
+        // 2) 스트라이크: 오른팔을 전방으로 폭발적으로 내지르는 오른손 스트레이트 펀치
         const sT = easeInQuad(clamp01((finisherT - windupEnd) / strikeSec));
-        attackerUnit.root.position.set(
-          THREE.MathUtils.lerp(THREE.MathUtils.lerp(clampedX, defX, 0.4), defX, sT),
-          THREE.MathUtils.lerp(LIFT_HEIGHT * 1.3, 0, sT),
-          THREE.MathUtils.lerp(THREE.MathUtils.lerp(clampedZ, defZ, 0.4), defZ, sT)
-        );
-        if (sT >= 0.999 && !active.rookCrushFired && defenderUnit !== undefined) {
-          active.rookCrushFired = true;
-          defenderUnit.root.scale.set(1.5, 0.06, 1.5);
+        if (shoulderR !== undefined) {
+          shoulderR.rotation.x = THREE.MathUtils.lerp(-1.8, 1.4, sT);
+          shoulderR.rotation.y = THREE.MathUtils.lerp(-0.6, 0.3, sT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(0.4, -0.2, sT);
         }
+        if (elbowR !== undefined) elbowR.rotation.x = THREE.MathUtils.lerp(-1.2, 0.2, sT);
+        lunge = 0.28 * sT;
       } else {
-        attackerUnit.root.position.set(defX, 0, defZ);
-        if (!active.rookCrushFired && defenderUnit !== undefined) {
-          active.rookCrushFired = true;
-          defenderUnit.root.scale.set(1.5, 0.06, 1.5);
+        // 3) 릴랙스: 타격 후 기본 자세로 복귀
+        const rT = easeOutQuad(clamp01((finisherT - strikeEnd) / (ROOK_SHATTER_RELAX_SEC * pacingScale)));
+        if (shoulderR !== undefined) {
+          shoulderR.rotation.x = THREE.MathUtils.lerp(1.4, 0.1, rT);
+          shoulderR.rotation.y = THREE.MathUtils.lerp(0.3, 0, rT);
+          shoulderR.rotation.z = THREE.MathUtils.lerp(-0.2, 0, rT);
         }
+        if (elbowR !== undefined) elbowR.rotation.x = THREE.MathUtils.lerp(0.2, 0, rT);
+        lunge = 0.28 * (1 - 0.7 * rT);
+      }
+
+      attackerUnit.root.position.set(
+        clampedX + lungeDirX * lunge,
+        0,
+        clampedZ + lungeDirZ * lunge
+      );
+    }
+
+    if (defenderUnit === undefined || finisherT <= strikeEnd) return;
+
+    // 타격 순간 사운드 재생
+    this.playThudOnce(active);
+
+    // 적 기물이 부서져 가루(8개의 미세 파편 + 헤드)가 되어 사방으로 흩날리는 연출
+    if (active.shatterFragments.length === 0) {
+      defenderUnit.mixer.stopAllAction();
+      const head = defenderUnit.bones['head'];
+      if (head !== undefined) {
+        const holder = detachSubtree(head, this.scene);
+        active.shatterFragments.push({
+          holder,
+          origin: holder.position.clone(),
+          driftDir: new THREE.Vector3(lungeDirX * 0.8 + 0.4, 0, lungeDirZ * 0.8 + 0.3).normalize(),
+          rotSpeed: [10, 8],
+        });
+      }
+
+      const bodyOrigin = defenderUnit.root.position.clone();
+      const fragmentCount = 8;
+      for (let i = 0; i < fragmentCount; i++) {
+        const angle = (i / fragmentCount) * Math.PI * 2 + (i % 2 === 0 ? 0.2 : -0.2);
+        const clone = defenderUnit.root.clone(true);
+        const fragScale = 0.3 + (i % 3) * 0.08;
+        clone.scale.setScalar(fragScale);
+        this.scene.add(clone);
+
+        const driftSpeed = 1.6 + (i % 4) * 0.3;
+        active.shatterFragments.push({
+          holder: clone,
+          origin: bodyOrigin,
+          driftDir: new THREE.Vector3(Math.cos(angle) * driftSpeed, 0, Math.sin(angle) * driftSpeed),
+          rotSpeed: [(i % 2 === 0 ? 1 : -1) * (10 + i * 2), (i % 3 === 0 ? 1 : -1) * (8 + i * 2)],
+        });
       }
     }
 
-    if (defenderUnit !== undefined && active.rookCrushFired && finisherT > holdEnd) {
-      const totalRel = active.totalDuration - active.approachDuration;
-      const shrinkEndRel = Math.max(holdEnd + 0.05, totalRel);
-      const shrinkT = clamp01((finisherT - holdEnd) / Math.max(0.001, shrinkEndRel - holdEnd));
-      defenderUnit.root.scale.set(1.5 * (1 - 0.9 * shrinkT), 0.06 * (1 - shrinkT), 1.5 * (1 - 0.9 * shrinkT));
-    }
+    const shatterT = finisherT - strikeEnd;
+    this.updateShatterFragments(active.shatterFragments, shatterT, 1.6, 3.8);
+
+    // 원본 중심체 — 타격 직후 즉시 으스러져 가루가 되며 빠르게 축소 및 소멸
+    const gravity = 3.8;
+    defenderUnit.root.position.set(
+      defX + lungeDirX * shatterT * 0.3,
+      Math.max(0, shatterT * 0.5 - 0.5 * gravity * shatterT * shatterT),
+      defZ + lungeDirZ * shatterT * 0.3
+    );
+    defenderUnit.root.rotation.x = shatterT * 12;
+    defenderUnit.root.rotation.z = -shatterT * 10;
+
+    const shrinkStart = strikeEnd;
+    this.applyShatterShrink(active, defenderUnit, finisherT, shrinkStart);
   }
 
   /**
