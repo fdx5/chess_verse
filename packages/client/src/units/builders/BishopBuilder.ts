@@ -3,29 +3,16 @@ import type { Color } from '@battle-chess/chess-core';
 import type { GeometryCache } from '../../engine/GeometryCache';
 import type { MaterialCache } from '../../engine/MaterialCache';
 import type { UnitInstance, QualityTier } from '../UnitProvider';
-import { makeBone, attachPart, buildArm, collectBones, getFactionMaterials, latheGeom, roundedBoxGeom, sphereGeom } from './PartKit';
+import { makeBone, attachPart, buildArm, collectBones, getUnitPalette, latheGeom, roundedBoxGeom, sphereGeom } from './PartKit';
 
 /**
- * D4 §2.2 Bishop — Cleric. H=1.00. 다리 본 없음(§3 예외) — hips가 지면 위 0.15 부양.
- * 사용자 요청으로 "너무 단순하다, 성직자 느낌이 나게, 지팡이를 들고 있게"로 전면 보강
- * (`docs/DEVIATIONS.md` [기물 리디자인] 참조): 뾰족한 두건(미트라풍)+이마 십자 장식,
- * 어깨 케이프, 스톨(진영색 띠), 허리 신치(금속 링)를 추가하고, 기존 오브 지팡이를
- * 목자의 지팡이(크로지어) 형태 — 갈고리 손잡이 + 그 안에 안긴 성물 오브 — 로 교체했다.
+ * D4 §2.2 Bishop — Cleric. H=1.00.
+ * 사용자 요청 §기물별 다채로운 리디자인 — 파스텔 라벤더(백)/딥 플럼(흑) 로브, 피부톤, 성물 십자/오브 적용.
  */
 export function buildBishop(color: Color, _quality: QualityTier, geometryCache: GeometryCache, materialCache: MaterialCache): UnitInstance {
-  const { fabric, metal } = getFactionMaterials(color, materialCache);
-  const staffOrbColor = color === 'w' ? '#7FD8FF' : '#B47FFF';
-  const stoleMat = materialCache.getOrCreate(
-    `bishop.stole.${color}`,
-    () =>
-      new THREE.MeshPhysicalMaterial({
-        color: color === 'w' ? '#B3352E' : '#D9C43A',
-        roughness: 0.35,
-        metalness: 0.1,
-        clearcoat: 0.4,
-        clearcoatRoughness: 0.2,
-      })
-  );
+  const palette = getUnitPalette('b', color, materialCache);
+  const staffOrbColor = color === 'w' ? '#98F0DB' : '#BC5FF5';
+  const stoleMat = palette.accent;
 
   const root = new THREE.Group();
   root.name = 'root';
@@ -35,6 +22,7 @@ export function buildBishop(color: Color, _quality: QualityTier, geometryCache: 
 
   const spine = makeBone('spine', [0, 0, 0]);
   hips.add(spine);
+  // 성직자 메인 로브 (라벤더 / 딥 바이올렛)
   attachPart(
     spine,
     latheGeom(geometryCache, 'bishop.robe', [
@@ -45,25 +33,25 @@ export function buildBishop(color: Color, _quality: QualityTier, geometryCache: 
       [0.1, 0.5],
       [0.12, 0.55],
     ]),
-    fabric
+    palette.primary
   );
 
-  // 신치(허리 금속 링) — 로브 위에 두른 벨트, D4 §4.1 진영 금속색 재사용.
+  // 신치 (허리 금속 링)
   attachPart(
     spine,
     geometryCache.getOrCreate('bishop.cincture', () => new THREE.TorusGeometry(0.155, 0.014, 8, 20).rotateX(Math.PI / 2)),
-    metal,
+    palette.accent,
     [0, 0.24, 0]
   );
 
-  // 스톨(성직자 띠) — 목에서 늘어뜨린 좌우 두 가닥, 나이트 십자와 같은 진영 강조색 사용.
+  // 스톨 (성직자 띠) — 목에서 늘어뜨린 좌우 두 가닥
   attachPart(spine, roundedBoxGeom(geometryCache, 'bishop.stole', 0.035, 0.32, 0.012, 0.25), stoleMat, [-0.045, 0.32, 0.135]);
   attachPart(spine, roundedBoxGeom(geometryCache, 'bishop.stole', 0.035, 0.32, 0.012, 0.25), stoleMat, [0.045, 0.32, 0.135]);
 
   const chest = makeBone('chest', [0, 0.42, 0]);
   spine.add(chest);
 
-  // 어깨 케이프 — 로브 위로 넓게 펼쳐졌다 목 쪽으로 좁아지는 실루엣.
+  // 어깨 케이프
   attachPart(
     chest,
     latheGeom(geometryCache, 'bishop.cape', [
@@ -72,13 +60,14 @@ export function buildBishop(color: Color, _quality: QualityTier, geometryCache: 
       [0.16, 0.04],
       [0.11, 0.08],
     ]),
-    fabric
+    palette.primary
   );
 
   const head = makeBone('head', [0, 0.12, 0]);
   chest.add(head);
-  attachPart(head, sphereGeom(geometryCache, 'bishop.head', 0.08), fabric);
-  // 미트라풍 뾰족 두건 — 기존 단순 콘 대신 연속 실루엣으로 성직자 느낌을 강화.
+  // 이목구비 피부톤 얼굴
+  attachPart(head, sphereGeom(geometryCache, 'bishop.head', 0.08), palette.skin);
+  // 미트라풍 뾰족 두건
   attachPart(
     head,
     latheGeom(geometryCache, 'bishop.hood', [
@@ -88,23 +77,23 @@ export function buildBishop(color: Color, _quality: QualityTier, geometryCache: 
       [0.025, 0.17],
       [0.0, 0.21],
     ]),
-    fabric,
+    palette.primary,
     [0, 0.03, 0]
   );
-  // 두건 이마에 작은 금속 십자 장식.
-  attachPart(head, roundedBoxGeom(geometryCache, 'bishop.hoodCross.v', 0.014, 0.05, 0.008, 0.3), metal, [0, 0.1, 0.08]);
-  attachPart(head, roundedBoxGeom(geometryCache, 'bishop.hoodCross.h', 0.032, 0.014, 0.008, 0.3), metal, [0, 0.115, 0.08]);
+  // 두건 이마의 금속 십자 장식
+  attachPart(head, roundedBoxGeom(geometryCache, 'bishop.hoodCross.v', 0.014, 0.05, 0.008, 0.3), palette.accent, [0, 0.1, 0.08]);
+  attachPart(head, roundedBoxGeom(geometryCache, 'bishop.hoodCross.h', 0.032, 0.014, 0.008, 0.3), palette.accent, [0, 0.115, 0.08]);
 
-  const shoulderL = buildArm('L', [-0.1, 0.03, 0], 0.12, 0.03, 0.12, 0.03, fabric, geometryCache, 'bishop');
-  const shoulderR = buildArm('R', [0.1, 0.03, 0], 0.12, 0.03, 0.12, 0.03, fabric, geometryCache, 'bishop');
+  const shoulderL = buildArm('L', [-0.1, 0.03, 0], 0.12, 0.03, 0.12, 0.03, palette.primary, geometryCache, 'bishop');
+  const shoulderR = buildArm('R', [0.1, 0.03, 0], 0.12, 0.03, 0.12, 0.03, palette.primary, geometryCache, 'bishop');
   chest.add(shoulderL.upper, shoulderR.upper);
 
   // 왼손 — 목자의 지팡이(크로지어): 자루 + 갈고리 손잡이 + 손잡이 안에 안긴 성물 오브.
-  const staff = attachPart(shoulderL.end, geometryCache.getOrCreate('bishop.staff', () => new THREE.CylinderGeometry(0.015, 0.015, 0.55, 12)), metal, [0, -0.2, 0]);
+  const staff = attachPart(shoulderL.end, geometryCache.getOrCreate('bishop.staff', () => new THREE.CylinderGeometry(0.015, 0.015, 0.55, 12)), palette.subtle, [0, -0.2, 0]);
   const hookRadius = 0.06;
   const hook = new THREE.Mesh(
     geometryCache.getOrCreate('bishop.crook', () => new THREE.TorusGeometry(hookRadius, 0.013, 8, 16, Math.PI * 1.4)),
-    metal
+    palette.accent
   );
   hook.position.set(-hookRadius, 0.275, 0);
   staff.add(hook);

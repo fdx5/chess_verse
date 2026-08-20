@@ -24,10 +24,12 @@ export class OrbitCameraRig {
     // maxPolarAngle을 크게 열어(0.95→1.3) 사용자가 원하면 훨씬 더 수평에 가까운 각도까지 내려서
     // 벽면을 넓게 볼 수 있게 한다. 90°(=수평)에 너무 가까우면 카메라가 바닥 높이까지 내려가
     // 지오메트리를 뚫고 지나갈 수 있어 74° 선에서 제한.
-    this.controls.minPolarAngle = 0.4;
-    this.controls.maxPolarAngle = 1.3;
-    this.controls.minDistance = 6.0;
-    this.controls.maxDistance = 15.0;
+    this.controls.minPolarAngle = 0.2;
+    this.controls.maxPolarAngle = 1.45;
+    // 사용자 요청 §카메라 줌인 확대폭 대폭 상향 — 유닛 얼굴/상반신까지 초근접(Close-up) 확대 가능 (6.0 -> 1.2)
+    this.controls.minDistance = 1.2;
+    this.controls.maxDistance = 22.0;
+    this.controls.enablePan = true;
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     // D9 Sprint 10 §터치 — 한 손가락 회전/두 손가락 확대·이동(THREE.js 기본값과 동일하지만 의도를 명시).

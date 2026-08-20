@@ -12,17 +12,17 @@ export interface BoardTheme {
   skybox: { type: 'gradient'; topColor: string; bottomColor: string };
 }
 
-/** D4 §8.3 — Castle Hall (기본 테마). */
+/** D4 §8.3 — Classic White & Black Studio (사용자 요청: 화이트/블랙 체스판 테마 및 기물 대비 강화). */
 export const CASTLE_HALL_THEME: BoardTheme = {
-  id: 'castle-hall',
-  name: 'Castle Hall',
-  tile: { light: '#E8DCC0', dark: '#8B5A3C', roughness: 0.5, metalness: 0.05 },
-  frame: { albedo: '#6B4A2F', roughness: 0.6, metalness: 0.1 },
-  ambientLight: { color: '#FFF4E0', intensity: 0.45 },
+  id: 'classic-white-black',
+  name: 'Classic White & Black',
+  tile: { light: '#F2F4F7', dark: '#111317', roughness: 0.32, metalness: 0.08 },
+  frame: { albedo: '#181B20', roughness: 0.42, metalness: 0.18 },
+  ambientLight: { color: '#F2F6FA', intensity: 0.55 },
   // 카메라 기본 위치가 -Z(백진영 쪽)로 바뀐 것에 맞춰 키 라이트도 -Z로 옮겨 카메라 쪽에서
   // 비추는 정면광을 유지한다(그대로 두면 카메라 반대편에서 비추는 역광이 되어 버림).
-  directionalLight: { color: '#FFEBC7', intensity: 1.2, position: [5, 8, -3] },
-  skybox: { type: 'gradient', topColor: '#3A2E1F', bottomColor: '#1A140D' },
+  directionalLight: { color: '#FFFFFF', intensity: 1.3, position: [5, 8, -3] },
+  skybox: { type: 'gradient', topColor: '#1A1E26', bottomColor: '#0D0F13' },
 };
 
 const BOARD_SIZE = 8;

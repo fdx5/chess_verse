@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import type { Color } from '@battle-chess/chess-core';
+import type { Color, PieceType } from '@battle-chess/chess-core';
 import type { GeometryCache } from '../../engine/GeometryCache';
 import type { MaterialCache } from '../../engine/MaterialCache';
 import { makeBone, attachPart, collectBones } from '../BoneRig';
@@ -147,6 +147,14 @@ export interface FactionPalette {
   metal: THREE.MeshPhysicalMaterial;
 }
 
+export interface UnitPalette {
+  primary: THREE.MeshPhysicalMaterial;
+  accent: THREE.MeshPhysicalMaterial;
+  subtle: THREE.MeshPhysicalMaterial;
+  skin: THREE.MeshPhysicalMaterial;
+  metal: THREE.MeshPhysicalMaterial;
+}
+
 /**
  * D4 §4.1 진영 팔레트. 품질 개선(사용자 피드백): `MeshStandardMaterial` → `MeshPhysicalMaterial` +
  * clearcoat로 "왁스 먹인 고급 보드게임 말" 같은 광택을 낸다(D4 "고급스러운 디오라마" 톤 강화).
@@ -179,4 +187,75 @@ export function getFactionMaterials(color: Color, materialCache: MaterialCache):
       })
   ) as THREE.MeshPhysicalMaterial;
   return { fabric, metal };
+}
+
+export function getUnitPalette(type: PieceType, color: Color, materialCache: MaterialCache): UnitPalette {
+  const isWhite = color === 'w';
+  const { metal } = getFactionMaterials(color, materialCache);
+
+  const skin = materialCache.getOrCreate(
+    `skin.${color}`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: isWhite ? '#FFE5D4' : '#5C4438',
+        roughness: 0.62,
+        metalness: 0.0,
+        clearcoat: 0.25,
+        clearcoatRoughness: 0.3,
+      })
+  ) as THREE.MeshPhysicalMaterial;
+
+  const primaryColors: Record<PieceType, string> = isWhite
+    ? { p: '#DDF0E6', n: '#DCE8F6', b: '#EADFF5', r: '#EBE2D5', q: '#F7E0E7', k: '#E3E7FA' }
+    : { p: '#3A4250', n: '#2C3444', b: '#301F3B', r: '#2B2826', q: '#3E1624', k: '#24243C' };
+
+  const accentColors: Record<PieceType, string> = isWhite
+    ? { p: '#E8D08D', n: '#E8C568', b: '#98F0DB', r: '#E5BF65', q: '#FFD768', k: '#FAD25A' }
+    : { p: '#9EB0C4', n: '#D4AA4F', b: '#BC5FF5', r: '#48A8F0', q: '#D8A43C', k: '#DDB045' };
+
+  const subtleColors: Record<PieceType, string> = isWhite
+    ? { p: '#EAE2D5', n: '#E2DDD6', b: '#EAE4DC', r: '#D6C8B8', q: '#FFF3F6', k: '#F5F6FC' }
+    : { p: '#222832', n: '#1C222E', b: '#1C1224', r: '#181615', q: '#200B14', k: '#141422' };
+
+  const primary = materialCache.getOrCreate(
+    `unitPalette.${color}.${type}.primary`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: primaryColors[type],
+        roughness: isWhite ? 0.35 : 0.32,
+        metalness: isWhite ? 0.15 : 0.35,
+        clearcoat: 0.65,
+        clearcoatRoughness: 0.12,
+        emissive: new THREE.Color(isWhite ? '#D4AF37' : '#4A6FA5'),
+        emissiveIntensity: isWhite ? 0.05 : 0.06,
+      })
+  ) as THREE.MeshPhysicalMaterial;
+
+  const accent = materialCache.getOrCreate(
+    `unitPalette.${color}.${type}.accent`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: accentColors[type],
+        roughness: 0.18,
+        metalness: 0.88,
+        clearcoat: 0.85,
+        clearcoatRoughness: 0.08,
+        emissive: new THREE.Color(accentColors[type]),
+        emissiveIntensity: 0.15,
+      })
+  ) as THREE.MeshPhysicalMaterial;
+
+  const subtle = materialCache.getOrCreate(
+    `unitPalette.${color}.${type}.subtle`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: subtleColors[type],
+        roughness: 0.65,
+        metalness: 0.05,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.25,
+      })
+  ) as THREE.MeshPhysicalMaterial;
+
+  return { primary, accent, subtle, skin, metal };
 }

@@ -40,35 +40,232 @@ function restoreBoneNamingConvention(root: THREE.Object3D): void {
   });
 }
 
+export interface UnitVisualTheme {
+  primary: string;         // 메인 의상/몸통 기본 색상 (백: 밝은 파스텔톤, 흑: 세련된 딥톤)
+  accent: string;          // 포인트 장식/트림/금속/보석 색상
+  pedestal: string;        // 발판/베이스 색상 (본체와 대비를 주어 이목구비/실루엣을 돋보이게 함)
+  metalness: number;       // 금속성
+  roughness: number;       // 표면 거칠기
+  clearcoat: number;       // 고급 에나멜/피규어 코팅 광택
+  clearcoatRoughness: number;
+  emissive: string;        // 앰비언트 글로우 색상
+  emissiveIntensity: number;
+}
+
 /**
- * 조각된(sculpted) 단일 메시 glTF 애셋(리깅 없음, 무채색 cavity 텍스처 1장)에 진영 색을 입힌다.
- * 절차적 기물(PartKit.getFactionMaterials)과 같은 팔레트/광택을 재사용해 두 파이프라인이 시각적으로
- * 어울리게 하고, 원본 텍스처의 맵만 유지한 채 공유 MaterialCache 인스턴스는 절대 직접 변경하지 않는다
- * (진영별로 새 MeshPhysicalMaterial을 만들어 텍스처만 얹는다).
- *
- * 사용자 요청 §포인트 컬러 — 기물 실루엣이 서로 비슷해 보인다는 피드백으로, 빌드 스크립트가 특정
- * 영역(가슴판/왕관/로브 등)을 별도 프리미티브로 잘라 glTF node extras에 `accentColor`(및 선택적
- * `accentMetal`)를 구워둔 경우, 그 부분은 진영색 대신 고정 포인트 컬러를 쓴다(진영 무관하게 항상
- * 같은 색 — "골드 왕관"처럼 정체성을 나타내는 디테일이라 진영 틴트로 덮이면 안 된다).
+ * 사용자 요청 §기물별 다채로운 리디자인 — 흑백 구분은 확실히 유지하면서,
+ * 단조로운 1톤 단색 대신 각 기물(폰, 나이트, 비숍, 룩, 퀸, 킹)의 이목구비와 역할에 맞춘
+ * 다채로운 파스텔 톤(백) & 딥 럭셔리 톤(흑) 팔레트를 적용한다.
  */
-function applyFactionTint(root: THREE.Object3D, color: Color, materialCache: MaterialCache): void {
-  const { fabric, metal } = getFactionMaterials(color, materialCache);
+const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
+  w: {
+    // 폰 (Pawn): 부드럽고 화사한 파스텔 세이지 민트 (Sage Mint) & 웜 샌드 베이지
+    p: {
+      primary: '#DDF0E6',
+      accent: '#E8D08D',
+      pedestal: '#EAE2D5',
+      metalness: 0.15,
+      roughness: 0.38,
+      clearcoat: 0.55,
+      clearcoatRoughness: 0.15,
+      emissive: '#B8E5D0',
+      emissiveIntensity: 0.08,
+    },
+    // 나이트 (Knight): 기품 있는 파스텔 로열 스카이블루 (Sky Blue) & 샴페인 골드
+    n: {
+      primary: '#DCE8F6',
+      accent: '#E8C568',
+      pedestal: '#E2DDD6',
+      metalness: 0.45,
+      roughness: 0.28,
+      clearcoat: 0.7,
+      clearcoatRoughness: 0.12,
+      emissive: '#AEC8EB',
+      emissiveIntensity: 0.09,
+    },
+    // 비숍 (Bishop): 신비로운 파스텔 라벤더 라일락 (Lavender Lilac) & 아쿠아 마린
+    b: {
+      primary: '#EADFF5',
+      accent: '#98F0DB',
+      pedestal: '#EAE4DC',
+      metalness: 0.2,
+      roughness: 0.35,
+      clearcoat: 0.65,
+      clearcoatRoughness: 0.14,
+      emissive: '#CFAFF5',
+      emissiveIntensity: 0.1,
+    },
+    // 룩 (Rook): 따뜻하고 단단한 웜 마블 샌드스톤 (Warm Sandstone) & 앰버 골드 룬
+    r: {
+      primary: '#EBE2D5',
+      accent: '#E5BF65',
+      pedestal: '#D6C8B8',
+      metalness: 0.25,
+      roughness: 0.52,
+      clearcoat: 0.45,
+      clearcoatRoughness: 0.18,
+      emissive: '#E5C075',
+      emissiveIntensity: 0.08,
+    },
+    // 퀸 (Queen): 우아하고 화려한 파스텔 로즈 블러시 핑크 (Rose Blush) & 로열 루비 골드
+    q: {
+      primary: '#F7E0E7',
+      accent: '#FFD768',
+      pedestal: '#FFF3F6',
+      metalness: 0.35,
+      roughness: 0.24,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.08,
+      emissive: '#F5B0C8',
+      emissiveIntensity: 0.12,
+    },
+    // 킹 (King): 장엄한 파스텔 임페리얼 스카이 퍼플 (Imperial Sky Purple) & 24K 브릴리언트 골드
+    k: {
+      primary: '#E3E7FA',
+      accent: '#FAD25A',
+      pedestal: '#F5F6FC',
+      metalness: 0.5,
+      roughness: 0.22,
+      clearcoat: 0.88,
+      clearcoatRoughness: 0.08,
+      emissive: '#E5C255',
+      emissiveIntensity: 0.14,
+    },
+  },
+  b: {
+    // 폰 (Pawn): 체스판 블랙 타일(#111317) 위에서도 선명하게 도드라지는 다크 메탈릭 슬레이트 (#3A4250) & 실버 림
+    p: {
+      primary: '#3A4250',
+      accent: '#9EB0C4',
+      pedestal: '#222832',
+      metalness: 0.42,
+      roughness: 0.35,
+      clearcoat: 0.65,
+      clearcoatRoughness: 0.12,
+      emissive: '#4D6282',
+      emissiveIntensity: 0.12,
+    },
+    // 나이트 (Knight): 흑요석 건메탈 (Obsidian Gunmetal) & 딥 미드나이트 네이비
+    n: {
+      primary: '#2C3444',
+      accent: '#D4AA4F',
+      pedestal: '#1C222E',
+      metalness: 0.68,
+      roughness: 0.22,
+      clearcoat: 0.8,
+      clearcoatRoughness: 0.1,
+      emissive: '#354E78',
+      emissiveIntensity: 0.11,
+    },
+    // 비숍 (Bishop): 매혹적인 딥 플럼 바이올렛 (Deep Plum Violet) & 네온 아메시스트 글로우
+    b: {
+      primary: '#301F3B',
+      accent: '#BC5FF5',
+      pedestal: '#1C1224',
+      metalness: 0.25,
+      roughness: 0.32,
+      clearcoat: 0.7,
+      clearcoatRoughness: 0.12,
+      emissive: '#8C35C5',
+      emissiveIntensity: 0.12,
+    },
+    // 룩 (Rook): 단단한 화산 현무암 다크 그라나이트 (Basalt Granite) & 아케인 시안 블루
+    r: {
+      primary: '#2B2826',
+      accent: '#48A8F0',
+      pedestal: '#181615',
+      metalness: 0.35,
+      roughness: 0.58,
+      clearcoat: 0.4,
+      clearcoatRoughness: 0.2,
+      emissive: '#2570B0',
+      emissiveIntensity: 0.1,
+    },
+    // 퀸 (Queen): 매혹적인 딥 버건디 크림슨 (Deep Burgundy Crimson) & 블러드 골드
+    q: {
+      primary: '#3E1624',
+      accent: '#D8A43C',
+      pedestal: '#200B14',
+      metalness: 0.5,
+      roughness: 0.22,
+      clearcoat: 0.88,
+      clearcoatRoughness: 0.08,
+      emissive: '#9E1838',
+      emissiveIntensity: 0.14,
+    },
+    // 킹 (King): 장엄한 섀도우 로열 퍼플 (Shadow Royal Purple) & 앤틱 임페리얼 골드
+    k: {
+      primary: '#24243C',
+      accent: '#DDB045',
+      pedestal: '#141422',
+      metalness: 0.65,
+      roughness: 0.2,
+      clearcoat: 0.9,
+      clearcoatRoughness: 0.08,
+      emissive: '#8C6A20',
+      emissiveIntensity: 0.15,
+    },
+  },
+};
+
+/**
+ * 조각된(sculpted) glTF 애셋에 유닛별 고유 컬러 팔레트와 다중 쉐이딩을 입힌다.
+ * 원본 텍스처(cavity/음영)의 디테일은 유지하면서, 메인 몸통/발판/악센트를 시각적으로 뚜렷이 분리한다.
+ */
+function applyFactionTint(root: THREE.Object3D, color: Color, _materialCache: MaterialCache, type: PieceType = 'p'): void {
+  const theme = UNIT_VISUAL_THEMES[color][type];
+
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
     const source = Array.isArray(obj.material) ? obj.material[0] : obj.material;
     const map = source instanceof THREE.MeshStandardMaterial ? source.map : null;
+
     const accentColorHex = obj.userData['accentColor'] as string | undefined;
     const accentMetal = obj.userData['accentMetal'] === true;
-    const base = accentMetal ? metal : fabric;
+    const isPedestal = obj.name === 'pedestal' || obj.name.toLowerCase().includes('pedestal');
+    
+    // 사용자 요청 §기사 가슴 절반 분할 색상 문제 해결:
+    // knight.glb의 chestAccent 노드는 가슴 우측(+x)에 편향되어 있어 단독 악센트로 칠해지면 가슴이 반쪽만 황금색으로 갈라져 보인다.
+    // 기사(type === 'n')에서는 chestAccent를 본체 메인 갑옷과 동일하게 일체화시켜 좌우가 매끄럽게 연결된 흉갑으로 렌더링한다.
+    const isKnightChestAccent = type === 'n' && (obj.name === 'chestAccent' || obj.name.includes('chestAccent'));
+    const isAccent = !isKnightChestAccent && (accentMetal || accentColorHex !== undefined);
+
+    let targetColor = theme.primary;
+    let targetMetalness = theme.metalness;
+    let targetRoughness = theme.roughness;
+    let targetClearcoat = theme.clearcoat;
+    let targetEmissive = new THREE.Color(theme.emissive);
+    let targetEmissiveIntensity = theme.emissiveIntensity;
+
+    if (isPedestal) {
+      // 발판: 기물 본체와 뚜렷하게 구분되는 베이스 톤 (본체의 이목구비/실루엣을 부각)
+      targetColor = theme.pedestal;
+      targetMetalness = 0.1;
+      targetRoughness = 0.65;
+      targetClearcoat = 0.25;
+      targetEmissiveIntensity = 0.02;
+    } else if (isAccent) {
+      // 포인트 장식/왕관/엠블럼/보석: 시선이 집중되는 화려한 포인트 골드/보석
+      targetColor = accentColorHex ?? theme.accent;
+      targetMetalness = 0.92;
+      targetRoughness = 0.18;
+      targetClearcoat = 0.95;
+      targetEmissive = new THREE.Color(theme.accent);
+      targetEmissiveIntensity = 0.22;
+    }
+
     obj.material = new THREE.MeshPhysicalMaterial({
       map,
-      color: accentColorHex !== undefined ? new THREE.Color(accentColorHex) : fabric.color.clone(),
-      roughness: base.roughness,
-      metalness: accentColorHex !== undefined ? (accentMetal ? base.metalness : 0.05) : base.metalness,
-      clearcoat: base.clearcoat,
-      clearcoatRoughness: base.clearcoatRoughness,
-      emissive: base.emissive.clone(),
-      emissiveIntensity: base.emissiveIntensity,
+      color: new THREE.Color(targetColor),
+      roughness: targetRoughness,
+      metalness: targetMetalness,
+      clearcoat: targetClearcoat,
+      clearcoatRoughness: theme.clearcoatRoughness,
+      emissive: targetEmissive,
+      emissiveIntensity: targetEmissiveIntensity,
+      specularIntensity: color === 'w' ? 1.15 : 1.25,
+      specularColor: color === 'w' ? new THREE.Color('#FFF8E8') : new THREE.Color('#D8E5FF'),
+      ior: 1.65,
     });
   });
 }
@@ -117,7 +314,7 @@ export class GLTFUnitProvider implements UnitProvider {
     const root = cloneSkeleton(template) as THREE.Object3D;
     root.name = 'root';
     restoreBoneNamingConvention(root);
-    applyFactionTint(root, color, this.materialCache);
+    applyFactionTint(root, color, this.materialCache, type);
 
     const bones = collectBones(root);
     const mixer = new THREE.AnimationMixer(root);
