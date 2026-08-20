@@ -20,6 +20,8 @@ import { RenderScheduler } from './engine/RenderScheduler';
 import { autoDetectQualityTier, isMobileDevice } from './engine/DeviceDetect';
 import { getQualitySettings, resolvePixelRatioCap, type QualityTier } from './engine/QualityTier';
 import { ProceduralUnitFactory } from './units/ProceduralUnitFactory';
+import { GLTFUnitProvider } from './units/GLTFUnitProvider';
+import { HybridUnitProvider } from './units/HybridUnitProvider';
 import { UnitBoard } from './units/UnitBoard';
 import { AnimationRegistry } from './anim/AnimationRegistry';
 import { ALL_IDLE_CLIPS } from './anim/data/movementClips/idle';
@@ -89,8 +91,31 @@ for (const idleClip of ALL_IDLE_CLIPS) {
 for (const combatScene of ALL_COMBAT_SCENES) animationRegistry.registerCombatScene(combatScene);
 
 // 3) 엔진 싱글턴(매치 재시작에도 재사용) — 유닛 팩토리/보드/오디오/전투 연출/AI Worker.
-const unitFactory = new ProceduralUnitFactory();
+// 사용자 요청 §비숍 스컬프트 애셋 — 조각된 고품질 glTF가 프리로드된 타입은 그쪽을, 나머지는 기존
+// 절차적 생성기를 쓴다(다른 기물도 같은 방식으로 순차 전환 예정).
+const gltfUnitProvider = new GLTFUnitProvider();
+const proceduralUnitFactory = new ProceduralUnitFactory();
+const unitFactory = new HybridUnitProvider(gltfUnitProvider, proceduralUnitFactory);
 const unitBoard = new UnitBoard(scene, unitFactory, animationRegistry, tier);
+
+// 조각 애셋은 무채색 중립 메시 1개라 진영별 preload가 같은 url을 가리켜도 실제 로드는 1회뿐이다.
+// 실패해도 HybridUnitProvider가 절차적 생성으로 자동 폴백하므로 흐름을 막지 않는다.
+// 새 조각 기물이 추가될 때마다 이 목록에 한 줄만 추가하면 된다.
+const SCULPTED_UNIT_ASSETS: readonly { type: PieceType; url: string }[] = [
+  { type: 'b', url: '/models/bishop.glb' },
+  { type: 'n', url: '/models/knight.glb' },
+  { type: 'p', url: '/models/pawn.glb' },
+  { type: 'r', url: '/models/rook.glb' },
+  { type: 'q', url: '/models/queen.glb' },
+  { type: 'k', url: '/models/king.glb' },
+];
+const sculptedUnitsReady: Promise<void> = Promise.all(
+  SCULPTED_UNIT_ASSETS.flatMap(({ type, url }) => [gltfUnitProvider.preload(type, 'w', url), gltfUnitProvider.preload(type, 'b', url)])
+)
+  .then(() => undefined)
+  .catch((err: unknown) => {
+    console.warn('[GLTFUnitProvider] 조각 애셋 프리로드 실패 — 절차적 생성으로 폴백:', err);
+  });
 
 const audioGraph = new AudioGraph();
 // 사용자 요청 §게임 내 사운드 — 메인 메뉴 버튼(캔버스 밖 DOM 오버레이) 클릭도 첫 제스처로 인정되도록
@@ -595,9 +620,10 @@ function startOnlineMatch(config: MatchConfig): void {
   client.connect(ONLINE_SERVER_URL);
 }
 
-function handleStartFromMenu(config: MatchConfig): void {
+async function handleStartFromMenu(config: MatchConfig): Promise<void> {
   soundRegistry.play('sfx.ui.game_start'); // 사용자 요청 §게임 시작 사운드
   void bgmPlayer.play(); // 게임 화면 진입 시 BGM 기본 자동재생(메인 메뉴에서는 재생하지 않음) — "시작" 클릭이 사용자 제스처 기준점.
+  await sculptedUnitsReady; // 대개 메인 메뉴 도달 전에 이미 끝나 있어 즉시 반환된다.
   if (config.source === 'online') startOnlineMatch(config);
   else startMatch(config);
 }

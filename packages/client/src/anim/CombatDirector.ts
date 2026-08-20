@@ -843,6 +843,12 @@ export class CombatDirector {
     this.unitBoard.relocateUnit(attackerFrom, attackerSquare);
     // Queen/King 파쇄 연출로 씬에 직접 추가해뒀던 파편들도 함께 정리한다.
     for (const frag of shatterFragments) this.scene.remove(frag.holder);
+
+    // 사용자 실측으로 발견 — Pawn/Knight/Queen/King 피니셔가 매 프레임 shoulder.R을 직접 회전시키는데,
+    // 연출이 끝나도 되돌려주는 코드가 없어 공격자가 이후 계속 팔을 꺾은 자세로 굳어 있었다.
+    const attackerUnit = this.unitBoard.getUnitAt(attackerSquare);
+    const shoulderR = attackerUnit?.bones['shoulder.R'];
+    if (shoulderR !== undefined) shoulderR.rotation.set(0, 0, 0);
   }
 
   private playVfx(cue: VfxCueDef, defenderSquare: Square): void {

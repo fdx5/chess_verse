@@ -103,8 +103,10 @@ function knightTwoArcPath(start: readonly [number, number], end: readonly [numbe
 const SPEED_SLOWDOWN = 1.35;
 
 export const MOVEMENT_PROFILES: Record<PieceType, MovementProfile> = {
-  p: { duration: (sq) => (0.35 + 0.3 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
-  n: { duration: () => 0.65 * SPEED_SLOWDOWN, path: knightTwoArcPath },
+  // 사용자 요청 — 폰 이동 속도를 절반으로(계수를 2배로).
+  p: { duration: (sq) => (0.7 + 0.6 * sq) * SPEED_SLOWDOWN, path: linearPath(easeInOutQuad) },
+  // 사용자 요청 — 나이트 이동 속도를 절반으로(기존 0.65의 2배 소요시간).
+  n: { duration: () => 1.3 * SPEED_SLOWDOWN, path: knightTwoArcPath },
   b: { duration: (sq) => (0.4 + 0.22 * sq) * SPEED_SLOWDOWN, path: bishopGlidePath },
   r: { duration: (sq) => 0.45 * sq * SPEED_SLOWDOWN, path: rookSteppedPath },
   q: { duration: (sq) => (0.3 + 0.24 * sq) * SPEED_SLOWDOWN, path: queenSCurvePath },

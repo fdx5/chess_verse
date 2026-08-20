@@ -48,6 +48,24 @@ function resetWalkCycle(unit: UnitInstance): void {
   });
 }
 
+/**
+ * 사용자 요청 §폰 발판 — 조각된 폰처럼 캐릭터가 별도 발판(pedestal) 위에 서 있는 애셋은, 이동 중
+ * 발판에서 내려와 실제 지면(y=0)을 걷는 것처럼 보여야 한다. `character`/`pedestal`이라는 이름의
+ * 자식 노드가 있는 애셋에서만 동작하는 범용 메커니즘이라 다른(발판 없는) 기물에는 영향이 없다.
+ * `character` 메시 정점은 "발판 위에 선" 기본 상태로 이미 구워져 있으므로(rest = y 오프셋 0),
+ * 이동 중에는 애셋에 구운 `userData.transitDropY`(glTF node extras → three.js userData로 전달됨)
+ * 만큼 아래로 내려 발이 실제 지면에 닿게 하고, 이동이 끝나면 0으로 되돌린다.
+ */
+function setPedestalStanding(unit: UnitInstance, standing: boolean): void {
+  const pedestal = unit.root.getObjectByName('pedestal');
+  const character = unit.root.getObjectByName('character');
+  if (pedestal === undefined || character === undefined) return;
+
+  const dropY = typeof character.userData['transitDropY'] === 'number' ? (character.userData['transitDropY'] as number) : 0;
+  pedestal.visible = standing;
+  character.position.y = standing ? 0 : -dropY;
+}
+
 export function squareToWorld(sq: Square): [number, number] {
   return [fileOf(sq) - BOARD_HALF + 0.5, rankOf(sq) - BOARD_HALF + 0.5];
 }
@@ -193,6 +211,7 @@ export class UnitBoard {
   private queueMovement(unit: UnitInstance, type: PieceType, from: Square, to: Square): void {
     const profile = MOVEMENT_PROFILES[type];
     const squares = Math.max(Math.abs(fileOf(to) - fileOf(from)), Math.abs(rankOf(to) - rankOf(from))) || 1;
+    setPedestalStanding(unit, false);
     this.activeMoves.push({
       unit,
       type,
@@ -218,6 +237,7 @@ export class UnitBoard {
       if (LEGGED_PIECE_TYPES.has(move.type)) applyWalkCycle(move.unit, move.elapsed);
       if (t >= 1) {
         if (LEGGED_PIECE_TYPES.has(move.type)) resetWalkCycle(move.unit);
+        setPedestalStanding(move.unit, true);
         this.activeMoves.splice(i, 1);
       }
     }
