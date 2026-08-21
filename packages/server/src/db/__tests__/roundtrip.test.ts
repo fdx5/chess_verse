@@ -11,7 +11,7 @@ let httpServer: Server;
 let baseUrl: string;
 
 beforeEach(async () => {
-  const db = openDatabase(':memory:');
+  const db = await openDatabase({ filePath: ':memory:' });
   const playerRepo = new PlayerRepository(db);
   const matchRepo = new MatchRepository(db);
   const historyQueries = new HistoryQueries(db);

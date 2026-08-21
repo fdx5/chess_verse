@@ -16,7 +16,7 @@ const DB_PATH = process.env['BCR_DB_PATH'] ?? join(import.meta.dirname, '../data
 // 오리진에서 서빙해 별도 포트/CORS/mixed-content 문제 없이 단일 도메인으로 서비스한다.
 const CLIENT_DIST = process.env['BCR_CLIENT_DIST'] ?? join(import.meta.dirname, '../../../dist/client');
 
-const db = openDatabase(DB_PATH);
+const db = await openDatabase();
 const playerRepo = new PlayerRepository(db);
 const matchRepo = new MatchRepository(db);
 const historyQueries = new HistoryQueries(db);
@@ -33,7 +33,7 @@ const httpServer = createServer((req, res) => {
 attachNetServer(httpServer, { playerRepo, matchRepo });
 
 httpServer.listen(PORT, () => {
-  console.log(`[server] listening on :${PORT} (db: ${DB_PATH})`);
+  console.log(`[server] listening on :${PORT}`);
 });
 
 // 배포(Render 무료 플랜) §셀프 핑 — GitHub Actions 크론(.github/workflows/keep-alive.yml)은

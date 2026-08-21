@@ -13,15 +13,15 @@ let httpServer: Server | null = null;
 let netServer: NetServer | null = null;
 
 /** D10-10 §왕복 통합 테스트 — 테스트마다 독립된 인메모리 DB를 새로 연다. */
-function startServer(): Promise<{ port: number; historyQueries: HistoryQueries }> {
+async function startServer(): Promise<{ port: number; historyQueries: HistoryQueries }> {
+  const db = await openDatabase({ filePath: ':memory:' });
+  const playerRepo = new PlayerRepository(db);
+  const matchRepo = new MatchRepository(db);
+  const historyQueries = new HistoryQueries(db);
+  httpServer = createServer();
+  netServer = attachNetServer(httpServer, { playerRepo, matchRepo });
   return new Promise((resolve) => {
-    const db = openDatabase(':memory:');
-    const playerRepo = new PlayerRepository(db);
-    const matchRepo = new MatchRepository(db);
-    const historyQueries = new HistoryQueries(db);
-    httpServer = createServer();
-    netServer = attachNetServer(httpServer, { playerRepo, matchRepo });
-    httpServer.listen(0, () => {
+    httpServer?.listen(0, () => {
       const address = httpServer?.address();
       resolve({ port: typeof address === 'object' && address !== null ? address.port : 0, historyQueries });
     });
@@ -167,7 +167,7 @@ describe('NetServer 통합 — 두 소켓으로 온라인 대전 완주', () => 
       expect(aliceMatchEnd.payload.serverMatchId).not.toBeNull();
       const serverMatchId = aliceMatchEnd.payload.serverMatchId;
       if (serverMatchId !== null) {
-        const detail = historyQueries.getMatchDetail(serverMatchId, 'alice-id');
+        const detail = await historyQueries.getMatchDetail(serverMatchId, 'alice-id');
         expect(detail).not.toBeNull();
         expect(detail?.verified).toBe(true);
         expect(detail?.source).toBe('online');

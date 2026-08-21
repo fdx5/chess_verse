@@ -10,6 +10,7 @@
   "dependencies": {
     "@battle-chess/chess-core": "*",
     "@battle-chess/protocol": "*",
+    "@libsql/client": "^0.17.4",
     "better-sqlite3": "^13.0.3",
     "ws": "^8.18.0"
   },

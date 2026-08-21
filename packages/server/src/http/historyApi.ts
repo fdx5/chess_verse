@@ -92,17 +92,17 @@ function normalizeNickname(raw: string | undefined): string | null {
   return trimmed;
 }
 
-function authenticate(req: IncomingMessage, deps: HistoryApiDeps): { playerId: string } | null {
+async function authenticate(req: IncomingMessage, deps: HistoryApiDeps): Promise<{ playerId: string } | null> {
   const playerId = req.headers['x-bcr-player-id'];
   const secret = req.headers['x-bcr-player-secret'];
   if (typeof playerId !== 'string' || typeof secret !== 'string') return null;
-  if (!deps.playerRepo.verifySecret(playerId, secret)) return null;
+  if (!(await deps.playerRepo.verifySecret(playerId, secret))) return null;
   return { playerId };
 }
 
-function insertOne(deps: HistoryApiDeps, submittedByPlayerId: string, m: SyncMatchDto): SyncUploadResult {
+async function insertOne(deps: HistoryApiDeps, submittedByPlayerId: string, m: SyncMatchDto): Promise<SyncUploadResult> {
   const source = m.source === 'online' ? 'local2p' : m.source; // 여기 도달 시점엔 이미 online은 걸러진 뒤(방어적 폴백)
-  const result = deps.matchRepo.insertSyncedMatch({
+  const result = await deps.matchRepo.insertSyncedMatch({
     clientLocalMatchId: m.clientLocalMatchId,
     submittedByPlayerId,
     source,
@@ -154,7 +154,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 200, { available: false, reason: 'invalid_length' }, req);
         return true;
       }
-      const available = deps.playerRepo.isNicknameAvailable(nickname, parsed.playerId);
+      const available = await deps.playerRepo.isNicknameAvailable(nickname, parsed.playerId);
       sendJson(res, 200, { available, reason: available ? undefined : 'taken' }, req);
       return true;
     }
@@ -162,7 +162,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
     if (url.pathname === '/api/v1/leaderboard' && req.method === 'GET') {
       const difficulty = (url.searchParams.get('difficulty') ?? 'intermediate') as import('@battle-chess/protocol').Difficulty;
       const limit = Number(url.searchParams.get('limit') ?? 50);
-      const entries = deps.historyQueries.getLeaderboard(difficulty, limit);
+      const entries = await deps.historyQueries.getLeaderboard(difficulty, limit);
       sendJson(res, 200, { difficulty, entries, totalCount: entries.length }, req);
       return true;
     }
@@ -183,7 +183,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 400, { error: 'INVALID_NICKNAME' }, req);
         return true;
       }
-      const result = deps.playerRepo.upsert({ id: parsed.playerId, nickname, ...(parsed.secret !== undefined ? { secret: parsed.secret } : {}) });
+      const result = await deps.playerRepo.upsert({ id: parsed.playerId, nickname, ...(parsed.secret !== undefined ? { secret: parsed.secret } : {}) });
       sendJson(res, 200, { playerId: parsed.playerId, nickname, isNew: result.isNew, secretAccepted: result.secretAccepted }, req);
       return true;
     }
@@ -193,7 +193,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
       }
-      const auth = authenticate(req, deps);
+      const auth = await authenticate(req, deps);
       if (auth === null) {
         sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
         return true;
@@ -212,7 +212,10 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 409, { error: 'ONLINE_RESULT_SERVER_ONLY' }, req);
         return true;
       }
-      const results = parsed.matches.map((m) => insertOne(deps, auth.playerId, m));
+      const results: SyncUploadResult[] = [];
+      for (const m of parsed.matches) {
+        results.push(await insertOne(deps, auth.playerId, m));
+      }
       sendJson(res, 200, { results }, req);
       return true;
     }
@@ -223,7 +226,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
       }
-      const auth = authenticate(req, deps);
+      const auth = await authenticate(req, deps);
       if (auth === null) {
         sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
         return true;
@@ -236,7 +239,8 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
       const limit = Number(url.searchParams.get('limit') ?? '20');
       const beforeParam = url.searchParams.get('before');
       const before = beforeParam !== null ? Number(beforeParam) : undefined;
-      sendJson(res, 200, deps.historyQueries.listMatches(targetId, limit, before), req);
+      const historyPage = await deps.historyQueries.listMatches(targetId, limit, before);
+      sendJson(res, 200, historyPage, req);
       return true;
     }
 
@@ -246,13 +250,13 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
       }
-      const auth = authenticate(req, deps);
+      const auth = await authenticate(req, deps);
       if (auth === null) {
         sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
         return true;
       }
       const matchId = detailMatch[1];
-      const detail = matchId !== undefined ? deps.historyQueries.getMatchDetail(matchId, auth.playerId) : null;
+      const detail = matchId !== undefined ? await deps.historyQueries.getMatchDetail(matchId, auth.playerId) : null;
       if (detail === null) {
         sendJson(res, 404, { error: 'NOT_FOUND' }, req);
         return true;
@@ -267,7 +271,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
       }
-      const auth = authenticate(req, deps);
+      const auth = await authenticate(req, deps);
       if (auth === null) {
         sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
         return true;
@@ -277,7 +281,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 403, { error: 'FORBIDDEN' }, req);
         return true;
       }
-      const stats = deps.historyQueries.getStats(targetId);
+      const stats = await deps.historyQueries.getStats(targetId);
       if (stats === null) {
         sendJson(res, 404, { error: 'PLAYER_NOT_FOUND' }, req);
         return true;
@@ -292,7 +296,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
       }
-      const auth = authenticate(req, deps);
+      const auth = await authenticate(req, deps);
       if (auth === null) {
         sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
         return true;
@@ -302,7 +306,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 403, { error: 'FORBIDDEN' }, req);
         return true;
       }
-      deps.playerRepo.deleteCascade(auth.playerId);
+      await deps.playerRepo.deleteCascade(auth.playerId);
       res.writeHead(204, { 'access-control-allow-origin': '*' });
       res.end();
       return true;

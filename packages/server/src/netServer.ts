@@ -121,7 +121,8 @@ export class NetServer {
         conn.lastSeenAt = Date.now();
         return;
       case 'PLAYER_IDENTIFY':
-        return this.onPlayerIdentify(conn, msg.payload);
+        void this.onPlayerIdentify(conn, msg.payload);
+        return;
       case 'QUEUE_JOIN':
         return this.onQueueJoin(conn, msg.payload);
       case 'MOVE':
@@ -151,12 +152,12 @@ export class NetServer {
     }
   }
 
-  private onPlayerIdentify(conn: Connection, payload: { playerId: string; nickname: string; secret?: string }): void {
+  private async onPlayerIdentify(conn: Connection, payload: { playerId: string; nickname: string; secret?: string }): Promise<void> {
     conn.playerId = payload.playerId;
     conn.nickname = payload.nickname.slice(0, 16);
     this.connectionByPlayerId.set(payload.playerId, conn);
     // D10-1 §서버 등록 흐름 — WS 세션에 playerId를 바인딩하는 시점에 players 테이블도 UPSERT한다.
-    const { isNew, secretAccepted } = this.deps.playerRepo.upsert({ id: payload.playerId, nickname: conn.nickname, ...(payload.secret !== undefined ? { secret: payload.secret } : {}) });
+    const { isNew, secretAccepted } = await this.deps.playerRepo.upsert({ id: payload.playerId, nickname: conn.nickname, ...(payload.secret !== undefined ? { secret: payload.secret } : {}) });
     const response: PlayerIdentifiedPayload = { playerId: payload.playerId, nickname: conn.nickname, isNew, secretAccepted, serverTimeMs: Date.now() };
     this.send(conn, envelope('PLAYER_IDENTIFIED', response));
   }
@@ -287,8 +288,8 @@ export class NetServer {
   }
 
   /** D10-5 §write-then-notify — DB 커밋이 끝난 뒤에만 MATCH_END를 보낸다(위조 불가 서버 권위 기록). */
-  private finishMatch(match: MatchState): void {
-    const serverMatchId = this.persistFinishedMatch(match);
+  private async finishMatch(match: MatchState): Promise<void> {
+    const serverMatchId = await this.persistFinishedMatch(match);
 
     for (const player of [match.playerA, match.playerB]) {
       const opponent = match.getOpponent(player.playerId);
@@ -307,7 +308,7 @@ export class NetServer {
   }
 
   /** DB 쓰기 실패 시에도 결과 통보 자체는 막지 않는다(D10-5) — 실패하면 null을 반환한다. */
-  private persistFinishedMatch(match: MatchState): string | null {
+  private async persistFinishedMatch(match: MatchState): Promise<string | null> {
     const whitePlayer = match.playerAColorGame1 === 'w' ? match.playerA : match.playerB;
     const blackPlayer = match.playerAColorGame1 === 'w' ? match.playerB : match.playerA;
     const scoreWhite = match.scoreByPlayerId[whitePlayer.playerId] ?? 0;
@@ -315,7 +316,7 @@ export class NetServer {
     const result: 'white' | 'black' | 'draw' | 'aborted' = match.games.length === 0 ? 'aborted' : scoreWhite > scoreBlack ? 'white' : scoreWhite < scoreBlack ? 'black' : 'draw';
 
     try {
-      return this.deps.matchRepo.finalizeMatch({
+      return await this.deps.matchRepo.finalizeMatch({
         format: match.format,
         playerWhiteId: whitePlayer.playerId,
         playerBlackId: blackPlayer.playerId,
