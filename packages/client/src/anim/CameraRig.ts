@@ -23,6 +23,8 @@ export class CameraRig {
   private snapshot: CameraSnapshot | null = null;
   private restoreElapsed = 0;
   private restoreFrom: CameraSnapshot | null = null;
+  private shakeStrength = 0;
+  private shakeElapsed = 0;
 
   constructor(private readonly orbit: OrbitCameraRig) {}
 
@@ -41,9 +43,23 @@ export class CameraRig {
         : new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5).getPoint(THREE.MathUtils.clamp(t, 0, 1));
 
     this.orbit.camera.position.copy(subjectWorld).add(offset);
+    if (this.shakeStrength > 0) {
+      const envelope = Math.max(0, 1 - this.shakeElapsed / 0.28);
+      const frequency = this.shakeElapsed * 72;
+      this.orbit.camera.position.x += Math.sin(frequency) * this.shakeStrength * envelope;
+      this.orbit.camera.position.y += Math.sin(frequency * 1.71) * this.shakeStrength * 0.55 * envelope;
+      this.orbit.camera.position.z += Math.cos(frequency * 1.23) * this.shakeStrength * 0.7 * envelope;
+      this.shakeElapsed += 1 / 60;
+      if (envelope <= 0) this.shakeStrength = 0;
+    }
     this.orbit.camera.lookAt(subjectWorld);
     this.orbit.camera.fov = this.lensMmToFov(shot.lensMm);
     this.orbit.camera.updateProjectionMatrix();
+  }
+
+  kick(strength: number): void {
+    this.shakeStrength = Math.max(this.shakeStrength, strength);
+    this.shakeElapsed = 0;
   }
 
   /** D5-5 §전환 OUT: 0.4s easeOutCubic으로 연출 시작 직전 궤도 카메라 상태로 복귀. */

@@ -9,6 +9,11 @@ export class GameRenderer {
     this.pixelRatioCap = pixelRatioCap;
     this.webgl = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.webgl.outputColorSpace = THREE.SRGBColorSpace;
+    this.webgl.toneMapping = THREE.ACESFilmicToneMapping;
+    this.webgl.toneMappingExposure = 1.12;
+    this.webgl.shadowMap.enabled = true;
+    this.webgl.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.webgl.localClippingEnabled = true;
     this.webgl.setPixelRatio(Math.min(window.devicePixelRatio, this.pixelRatioCap));
     this.resize();
   }

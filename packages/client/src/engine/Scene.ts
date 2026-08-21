@@ -67,6 +67,8 @@ function buildCheckerboard(theme: BoardTheme): THREE.Group {
   }
   const lightMesh = new THREE.Mesh(lightMerged, lightMat);
   const darkMesh = new THREE.Mesh(darkMerged, darkMat);
+  lightMesh.receiveShadow = true;
+  darkMesh.receiveShadow = true;
   lightMesh.name = 'tiles.light';
   darkMesh.name = 'tiles.dark';
   group.add(lightMesh, darkMesh);
@@ -139,6 +141,15 @@ export function buildLighting(theme: BoardTheme): THREE.Group {
   const directional = new THREE.DirectionalLight(theme.directionalLight.color, theme.directionalLight.intensity);
   directional.position.set(...theme.directionalLight.position);
   directional.name = 'sun';
+  directional.castShadow = true;
+  directional.shadow.mapSize.set(2048, 2048);
+  directional.shadow.camera.near = 0.5;
+  directional.shadow.camera.far = 24;
+  directional.shadow.camera.left = -6;
+  directional.shadow.camera.right = 6;
+  directional.shadow.camera.top = 6;
+  directional.shadow.camera.bottom = -6;
+  directional.shadow.bias = -0.00035;
 
   // 품질 개선(사용자 피드백): 유닛 재질(clearcoat 등)이 살도록 반대편에서 낮은 강도의 필 라이트를 추가.
   // castShadow=false로 D9 그림자 예산(단일 방향광 콘택트 섀도우)을 건드리지 않는다.

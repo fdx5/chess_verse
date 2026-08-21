@@ -127,6 +127,12 @@ export class UnitBoard {
     const [x, z] = squareToWorld(square);
     instance.root.position.set(x, 0, z);
     if (color === 'b') instance.root.rotation.y = Math.PI;
+    instance.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
     this.scene.add(instance.root);
 
     const idleDef = this.animationRegistry.getIdleClip(type);
