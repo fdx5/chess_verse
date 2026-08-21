@@ -300,23 +300,27 @@ function startMatch(config: MatchConfig): void {
     if (currentIdentity !== null) {
       const firstGame = games[0];
       const lastGame = games[games.length - 1];
-      void matchRecorder.record({
-        localMatchId,
-        source,
-        format,
-        myPlayerId: currentIdentity.playerId,
-        myColorGame1: config.myColorGame1,
-        opponentKind: source === 'cpu' ? 'cpu' : 'human-local',
-        opponentLabel: source === 'cpu' ? `CPU (${DIFFICULTY_LABEL_KO[config.cpuDifficulty ?? 'intermediate']})` : '상대 플레이어',
-        ...(source === 'cpu' ? { cpuDifficulty: config.cpuDifficulty ?? 'intermediate' } : {}),
-        timeControl: 'unlimited',
-        scoreMine,
-        scoreOpponent,
-        outcome,
-        startedAt: firstGame?.startedAt ?? Date.now(),
-        endedAt: lastGame?.endedAt ?? Date.now(),
-        games,
-      });
+      void matchRecorder
+        .record({
+          localMatchId,
+          source,
+          format,
+          myPlayerId: currentIdentity.playerId,
+          myColorGame1: config.myColorGame1,
+          opponentKind: source === 'cpu' ? 'cpu' : 'human-local',
+          opponentLabel: source === 'cpu' ? `CPU (${DIFFICULTY_LABEL_KO[config.cpuDifficulty ?? 'intermediate']})` : '상대 플레이어',
+          ...(source === 'cpu' ? { cpuDifficulty: config.cpuDifficulty ?? 'intermediate' } : {}),
+          timeControl: 'unlimited',
+          scoreMine,
+          scoreOpponent,
+          outcome,
+          startedAt: firstGame?.startedAt ?? Date.now(),
+          endedAt: lastGame?.endedAt ?? Date.now(),
+          games,
+        })
+        .then(() => {
+          void syncEngine.syncNow();
+        });
     }
 
     playOutcomeSound(outcome);
@@ -678,7 +682,14 @@ const settingsScreen = new SettingsScreen(app, {
   },
 });
 const nicknameModal = new NicknameModal(app, historyClient);
-const leaderboardScreen = new LeaderboardScreen(app, historyStore, historyClient, () => mainMenu.show());
+const leaderboardScreen = new LeaderboardScreen(
+  app,
+  historyStore,
+  historyClient,
+  () => currentIdentity,
+  () => syncEngine.syncNow(),
+  () => mainMenu.show()
+);
 const mainMenu = new MainMenu(
   app,
   handleStartFromMenu,

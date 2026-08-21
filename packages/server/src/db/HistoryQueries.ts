@@ -149,7 +149,7 @@ export class HistoryQueries {
     const rows = this.db.prepare(`
       SELECT 
         m.id as match_id,
-        COALESCE(m.player_white_id, m.player_black_id, m.submitted_by_player_id) as player_id,
+        COALESCE(m.submitted_by_player_id, m.player_white_id, m.player_black_id) as player_id,
         COALESCE(p.nickname, m.white_label, m.black_label, '플레이어') as nickname,
         m.cpu_difficulty,
         CASE WHEN m.duration_ms > 0 THEN CAST(m.duration_ms / 1000 AS INTEGER) ELSE CAST((m.ended_at - m.started_at) / 1000 AS INTEGER) END as duration_seconds,
@@ -157,14 +157,9 @@ export class HistoryQueries {
         m.leaderboard_score as score,
         m.ended_at
       FROM matches m
-      LEFT JOIN players p ON p.id = COALESCE(m.player_white_id, m.player_black_id, m.submitted_by_player_id)
+      LEFT JOIN players p ON p.id = COALESCE(m.submitted_by_player_id, m.player_white_id, m.player_black_id)
       WHERE m.source = 'cpu' 
         AND m.cpu_difficulty = ?
-        AND (
-          (m.player_white_id IS NOT NULL AND m.result = 'white') OR
-          (m.player_black_id IS NOT NULL AND m.result = 'black') OR
-          (m.score_white > m.score_black)
-        )
         AND m.leaderboard_score > 0
       ORDER BY m.leaderboard_score DESC, duration_seconds ASC, m.ended_at ASC
       LIMIT ?
@@ -179,17 +174,20 @@ export class HistoryQueries {
       ended_at: number;
     }[];
 
-    return rows.map((r, index) => ({
-      rank: index + 1,
-      matchId: r.match_id,
-      playerId: r.player_id,
-      nickname: r.nickname === '(나)' ? (pNickname(this.db, r.player_id) ?? '플레이어') : r.nickname,
-      cpuDifficulty: r.cpu_difficulty,
-      durationSeconds: Math.max(1, r.duration_seconds),
-      piecesLost: r.pieces_lost,
-      score: r.score,
-      endedAt: r.ended_at,
-    }));
+    return rows.map((r, index) => {
+      const resolvedNick = (r.nickname && r.nickname !== '(나)') ? r.nickname : (pNickname(this.db, r.player_id) ?? '플레이어');
+      return {
+        rank: index + 1,
+        matchId: r.match_id,
+        playerId: r.player_id,
+        nickname: resolvedNick,
+        cpuDifficulty: r.cpu_difficulty,
+        durationSeconds: Math.max(1, r.duration_seconds),
+        piecesLost: r.pieces_lost,
+        score: r.score,
+        endedAt: r.ended_at,
+      };
+    });
   }
 }
 
