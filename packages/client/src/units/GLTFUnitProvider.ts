@@ -145,17 +145,17 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
       emissive: '#5C7498',
       emissiveIntensity: 0.14,
     },
-    // 나이트 (Knight): 나이트폴 건메탈 블루 (#323E54) & 찬란한 샤이니 골드
+    // 나이트 (Knight): 사용자 요청 §폰과 확실한 차별화 — 딥 블러드 크림슨 아머 (#58141E) & 샤이니 플래티넘 골드
     n: {
-      primary: '#323E54',
-      accent: '#E8B848',
-      pedestal: '#1C2534',
-      metalness: 0.7,
-      roughness: 0.2,
+      primary: '#58141E',
+      accent: '#F59E0B',
+      pedestal: '#2A0B10',
+      metalness: 0.75,
+      roughness: 0.22,
       clearcoat: 0.85,
       clearcoatRoughness: 0.08,
-      emissive: '#45628C',
-      emissiveIntensity: 0.12,
+      emissive: '#831843',
+      emissiveIntensity: 0.15,
     },
     // 비숍 (Bishop): 매혹적인 다크 아메시스트 퍼플 (#3C244E) & 네온 바이올렛 글로우
     b: {
@@ -193,17 +193,17 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
       emissive: '#C02048',
       emissiveIntensity: 0.16,
     },
-    // 킹 (King): 장엄한 임페리얼 섀도우 퍼플 (#303052) & 24K 앤틱 골드
+    // 킹 (King): 사용자 요청 §누런 톤 제거 및 위엄 강화 — 딥 흑요석 나이트 로브 (#161922) & 루미너스 플래티넘 실버/아메시스트 크리스탈 (#E2E8F0)
     k: {
-      primary: '#303052',
-      accent: '#E8B848',
-      pedestal: '#1A1A30',
-      metalness: 0.7,
-      roughness: 0.18,
-      clearcoat: 0.92,
-      clearcoatRoughness: 0.08,
-      emissive: '#A88028',
-      emissiveIntensity: 0.16,
+      primary: '#161922',
+      accent: '#E2E8F0',
+      pedestal: '#0F1218',
+      metalness: 0.85,
+      roughness: 0.16,
+      clearcoat: 0.95,
+      clearcoatRoughness: 0.06,
+      emissive: '#7C3AED',
+      emissiveIntensity: 0.18,
     },
   },
 };

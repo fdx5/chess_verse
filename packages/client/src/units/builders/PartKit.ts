@@ -207,15 +207,15 @@ export function getUnitPalette(type: PieceType, color: Color, materialCache: Mat
 
   const primaryColors: Record<PieceType, string> = isWhite
     ? { p: '#DDF0E6', n: '#DCE8F6', b: '#EADFF5', r: '#FAF6EE', q: '#F7E0E7', k: '#E3E7FA' }
-    : { p: '#4A566A', n: '#323E54', b: '#3C244E', r: '#151820', q: '#52182B', k: '#303052' };
+    : { p: '#4A566A', n: '#58141E', b: '#3C244E', r: '#151820', q: '#52182B', k: '#161922' };
 
   const accentColors: Record<PieceType, string> = isWhite
     ? { p: '#E8D08D', n: '#E8C568', b: '#98F0DB', r: '#F5C842', q: '#FFD768', k: '#FAD25A' }
-    : { p: '#B0C2D8', n: '#E8B848', b: '#D070FF', r: '#1D6FB8', q: '#E8A845', k: '#E8B848' };
+    : { p: '#B0C2D8', n: '#F59E0B', b: '#D070FF', r: '#1D6FB8', q: '#E8A845', k: '#E2E8F0' };
 
   const subtleColors: Record<PieceType, string> = isWhite
     ? { p: '#FAF4E8', n: '#F5EFE6', b: '#FAF6EE', r: '#EDE5D8', q: '#FFF5F8', k: '#F8F9FD' }
-    : { p: '#222A36', n: '#1C2534', b: '#22142E', r: '#0E1015', q: '#2C0D17', k: '#1A1A30' };
+    : { p: '#222A36', n: '#2A0B10', b: '#22142E', r: '#0E1015', q: '#2C0D17', k: '#0F1218' };
 
   const primary = materialCache.getOrCreate(
     `unitPalette.${color}.${type}.primary`,
