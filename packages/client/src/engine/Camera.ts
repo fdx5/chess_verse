@@ -7,6 +7,9 @@ export class OrbitCameraRig {
   readonly controls: OrbitControls;
   private readonly raycaster = new THREE.Raycaster();
   private readonly groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private readonly defaultPosition = new THREE.Vector3(0, 6.4, -10.5);
+  /** 보드보다 위를 바라보게 해 보드를 화면 아래쪽에 두고 방 배경 노출을 확보한다. */
+  private readonly defaultTarget = new THREE.Vector3(0, 2.8, 0);
 
   private resetAnimation: {
     startPos: THREE.Vector3;
@@ -23,15 +26,15 @@ export class OrbitCameraRig {
     // 오히려 바닥 방향만 더 넓게 잡히고 수평선(벽면·벽화가 있는 높이)은 프레임 위쪽 바깥으로 밀려나
     // 있었다. FOV를 넓히고(45→58) 기본 시점을 수평에 더 가깝게 낮춰서 프레임 상단이 수평선 근처까지
     // 닿게 했다 — 이게 "카메라를 높이 든다"보다 실제로 벽화를 더 많이 보여주는 방향이다.
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 100);
+    this.camera = new THREE.PerspectiveCamera(64, 1, 0.1, 100);
     // 사용자 요청 — 기본 시점을 백진영 뒤쪽(-Z)에 둬서 백이 흑을 바라보는 방향으로 시작한다.
     // squareToWorld()가 rank 0(백 시작 랭크)을 -Z, rank 7(흑 시작 랭크)을 +Z에 배치하므로,
     // 카메라를 +Z가 아닌 -Z에 두면 항상 백이 화면 앞쪽(카메라 쪽)에 서게 되어 매 대전 시작마다
     // 수동으로 궤도 회전시킬 필요가 없다.
-    this.camera.position.set(0, 6, -10);
+    this.camera.position.copy(this.defaultPosition);
 
     this.controls = new OrbitControls(this.camera, domElement);
-    this.controls.target.set(0, 0, 0);
+    this.controls.target.copy(this.defaultTarget);
     // maxPolarAngle을 크게 열어(0.95→1.3) 사용자가 원하면 훨씬 더 수평에 가까운 각도까지 내려서
     // 벽면을 넓게 볼 수 있게 한다. 90°(=수평)에 너무 가까우면 카메라가 바닥 높이까지 내려가
     // 지오메트리를 뚫고 지나갈 수 있어 74° 선에서 제한.
@@ -72,7 +75,7 @@ export class OrbitCameraRig {
         this.controls.target.lerp(hitPoint, 0.22);
       } else {
         // 줌아웃: 전체 조망을 위해 원점 방향으로 서서히 복귀
-        this.controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.15);
+        this.controls.target.lerp(this.defaultTarget, 0.15);
       }
     }
   };
@@ -110,8 +113,8 @@ export class OrbitCameraRig {
 
   /** 기본 시점 및 타겟 위치로 부드럽게 초기화 (0.35s easeOutCubic) */
   resetView(animated = true): void {
-    const defaultPos = new THREE.Vector3(0, 6, -10);
-    const defaultTarget = new THREE.Vector3(0, 0, 0);
+    const defaultPos = this.defaultPosition;
+    const defaultTarget = this.defaultTarget;
 
     if (!animated) {
       this.camera.position.copy(defaultPos);

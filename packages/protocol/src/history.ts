@@ -37,6 +37,25 @@ export interface MatchHistoryPage {
   totalCount: number;
 }
 
+/** 모든 플레이어에게 공개되는 최근 대전 로그의 한 항목. */
+export interface PublicMatchLogDto {
+  matchId: string;
+  source: MatchSource;
+  whiteLabel: string;
+  blackLabel: string;
+  scoreWhite: number;
+  scoreBlack: number;
+  result: 'white' | 'black' | 'draw' | 'aborted';
+  gameCount: number;
+  endedAt: number;
+}
+
+export interface PublicMatchLogPageDto {
+  matches: PublicMatchLogDto[];
+  nextBefore: number | null;
+  totalCount: number;
+}
+
 export interface GameRecordDto {
   gameIndex: number;
   myColor: Color;

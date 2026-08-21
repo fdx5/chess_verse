@@ -1,7 +1,6 @@
-import type { Difficulty, LeaderboardEntryDto } from '@battle-chess/protocol';
+import type { Difficulty, LeaderboardEntryDto, PublicMatchLogDto } from '@battle-chess/protocol';
 import type { IndexedDbStore } from '../persistence/IndexedDbStore';
 import type { HistoryClient } from '../persistence/HistoryClient';
-import type { LocalMatchRecord } from '../persistence/schema';
 import type { PlayerIdentity } from '../persistence/identity';
 
 const GOLD = '#D4AF37';
@@ -15,9 +14,6 @@ const DIFFICULTIES: readonly { key: Difficulty; label: string; icon: string }[] 
   { key: 'advanced', label: '고급', icon: '🔥' },
   { key: 'master', label: '마스터', icon: '👑' },
 ];
-
-const OUTCOME_LABEL: Record<LocalMatchRecord['outcome'], string> = { win: '승리', loss: '패배', draw: '무승부', aborted: '중단' };
-const OUTCOME_COLOR: Record<LocalMatchRecord['outcome'], string> = { win: '#4ADE80', loss: '#F87171', draw: '#FBBF24', aborted: '#9CA3AF' };
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -210,6 +206,10 @@ export class LeaderboardScreen {
   }
 
   private async renderHistoryTab(): Promise<void> {
+    await this.renderPublicHistoryTab();
+    return;
+
+    /* Legacy local-only history rendering retained in git history.
     const matches = await this.store.listMatches({ limit: 50 });
     const currentMyId = this.getIdentity()?.nickname ?? '플레이어';
 
@@ -269,6 +269,46 @@ export class LeaderboardScreen {
 
       row.appendChild(left);
       row.appendChild(right);
+      this.contentEl.appendChild(row);
+    }
+    */
+  }
+
+  private async renderPublicHistoryTab(): Promise<void> {
+    let matches: PublicMatchLogDto[];
+    try {
+      matches = (await this.client.fetchPublicMatchLogs({ limit: 100 })).matches;
+    } catch {
+      const error = document.createElement('div');
+      error.textContent = '서버 전적 로그를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
+      error.style.cssText = 'color:#F87171;text-align:center;padding:48px 0;font-size:14px;';
+      this.contentEl.appendChild(error);
+      return;
+    }
+    if (matches.length === 0) {
+      const empty = document.createElement('div');
+      empty.textContent = '아직 서버에 기록된 대전 전적이 없습니다.';
+      empty.style.cssText = 'opacity:0.7;text-align:center;padding:48px 0;font-size:14px;';
+      this.contentEl.appendChild(empty);
+      return;
+    }
+    for (const match of matches) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid rgba(107,74,47,0.4);border-radius:10px;background:rgba(26,20,13,0.6);';
+      const info = document.createElement('div');
+      info.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+      const players = document.createElement('div');
+      players.textContent = `${match.whiteLabel} vs ${match.blackLabel}`;
+      players.style.cssText = `font-weight:700;color:${GOLD_BRIGHT};font-size:14px;`;
+      const meta = document.createElement('div');
+      const result = match.result === 'white' ? '백 승' : match.result === 'black' ? '흑 승' : match.result === 'draw' ? '무승부' : '중단';
+      meta.textContent = `${result} · ${formatDate(match.endedAt)} · ${match.source.toUpperCase()} · ${match.gameCount}게임`;
+      meta.style.cssText = 'font-size:12px;opacity:0.7;';
+      info.append(players, meta);
+      const score = document.createElement('div');
+      score.textContent = `${match.scoreWhite} : ${match.scoreBlack}`;
+      score.style.cssText = 'font:700 18px ui-monospace,monospace;color:' + GOLD_BRIGHT + ';';
+      row.append(info, score);
       this.contentEl.appendChild(row);
     }
   }

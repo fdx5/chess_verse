@@ -1,4 +1,4 @@
-import type { IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, SyncMatchDto, SyncUploadResult } from '@battle-chess/protocol';
+import type { IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, PublicMatchLogPageDto, SyncMatchDto, SyncUploadResult } from '@battle-chess/protocol';
 import type { PlayerIdentity } from './identity';
 
 /** D10-6 §히스토리 REST 클라이언트 — 인증은 `X-BCR-Player-Id`/`X-BCR-Player-Secret` 헤더로. */
@@ -36,6 +36,14 @@ export class HistoryClient {
     const res = await fetch(`${this.baseUrl}/api/v1/players/${identity.playerId}/matches?${params.toString()}`, { headers: this.authHeaders(identity) });
     if (!res.ok) throw new Error(`fetchHistory failed: ${res.status}`);
     return (await res.json()) as MatchHistoryPage;
+  }
+
+  async fetchPublicMatchLogs(opts: { limit: number; before?: number }): Promise<PublicMatchLogPageDto> {
+    const params = new URLSearchParams({ limit: String(opts.limit) });
+    if (opts.before !== undefined) params.set('before', String(opts.before));
+    const res = await fetch(`${this.baseUrl}/api/v1/matches?${params.toString()}`);
+    if (!res.ok) throw new Error(`fetchPublicMatchLogs failed: ${res.status}`);
+    return (await res.json()) as PublicMatchLogPageDto;
   }
 
   async fetchMatch(identity: PlayerIdentity, matchId: string): Promise<MatchDetailDto> {

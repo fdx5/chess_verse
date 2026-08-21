@@ -1,6 +1,6 @@
 import type { Client } from '@libsql/client';
 import type { Color } from '@battle-chess/chess-core';
-import type { Difficulty, GameEndReason, MatchDetailDto, MatchFormat, MatchHistoryPage, MatchOutcome, MatchSource, MatchSummaryDto, PlayerStatsBucket, PlayerStatsDto, TimeControlKind } from '@battle-chess/protocol';
+import type { Difficulty, GameEndReason, MatchDetailDto, MatchFormat, MatchHistoryPage, MatchOutcome, MatchSource, MatchSummaryDto, PlayerStatsBucket, PlayerStatsDto, PublicMatchLogPageDto, TimeControlKind } from '@battle-chess/protocol';
 
 interface MatchRow {
   id: string;
@@ -69,6 +69,35 @@ const emptyBucket = (): PlayerStatsBucket => ({ matches: 0, wins: 0, draws: 0, l
 /** D10-6 §히스토리 조회 — Turso 클라우드/Libsql 비동기 쿼리 계층. */
 export class HistoryQueries {
   constructor(private readonly client: Client) {}
+
+  /** 전적 로그 화면용 전체 사용자 최근 대전 목록. */
+  async listPublicMatches(limit: number, before?: number): Promise<PublicMatchLogPageDto> {
+    const cappedLimit = Math.min(Math.max(Math.trunc(limit) || 50, 1), 100);
+    const cursor = before ?? Number.MAX_SAFE_INTEGER;
+    const res = await this.client.execute({
+      sql: `SELECT id, source, white_label, black_label, score_white, score_black,
+                   result, game_count, ended_at
+            FROM matches WHERE ended_at < ?
+            ORDER BY ended_at DESC LIMIT ?`,
+      args: [cursor, cappedLimit + 1],
+    });
+    const totalRes = await this.client.execute('SELECT COUNT(*) AS c FROM matches');
+    const hasMore = res.rows.length > cappedLimit;
+    const rows = hasMore ? res.rows.slice(0, cappedLimit) : res.rows;
+    const matches = rows.map((row) => ({
+      matchId: String(row['id']),
+      source: row['source'] as MatchSource,
+      whiteLabel: String(row['white_label']),
+      blackLabel: String(row['black_label']),
+      scoreWhite: Number(row['score_white']),
+      scoreBlack: Number(row['score_black']),
+      result: row['result'] as 'white' | 'black' | 'draw' | 'aborted',
+      gameCount: Number(row['game_count']),
+      endedAt: Number(row['ended_at']),
+    }));
+    const last = matches[matches.length - 1];
+    return { matches, nextBefore: hasMore && last !== undefined ? last.endedAt : null, totalCount: Number(totalRes.rows[0]?.['c'] ?? 0) };
+  }
 
   async listMatches(playerId: string, limit: number, before?: number): Promise<MatchHistoryPage> {
     const cappedLimit = Math.min(Math.max(Math.trunc(limit) || 20, 1), 50);

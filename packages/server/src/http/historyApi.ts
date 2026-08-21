@@ -167,6 +167,18 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
       return true;
     }
 
+    if (url.pathname === '/api/v1/matches' && req.method === 'GET') {
+      if (!checkRateLimit(`get:${ip}`, 60)) {
+        sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
+        return true;
+      }
+      const limit = Number(url.searchParams.get('limit') ?? '50');
+      const beforeParam = url.searchParams.get('before');
+      const before = beforeParam !== null ? Number(beforeParam) : undefined;
+      sendJson(res, 200, await deps.historyQueries.listPublicMatches(limit, before), req);
+      return true;
+    }
+
     if (url.pathname === '/api/v1/players/identify' && req.method === 'POST') {
       if (!checkRateLimit(`identify:${ip}`, 10)) {
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
