@@ -73,6 +73,28 @@ app.appendChild(canvas);
 let tier: QualityTier = 'medium';
 const renderer = new GameRenderer(canvas, resolvePixelRatioCap(tier, isMobileDevice()));
 const scene = buildScene();
+const BACKGROUND_URLS = [
+  '/env/hdrmaps-049.jpg',
+  '/env/music-hall-01.jpg',
+  '/env/ballroom.jpg',
+  '/env/hdrmaps-160.jpg',
+] as const;
+let currentBackgroundIndex = -1;
+let backgroundLoadQueue: Promise<void> = Promise.resolve();
+
+/** 현재 이미지와 다른 360도 배경을 무작위로 골라 순차 로드한다. */
+function changeBackground(): Promise<void> {
+  let nextIndex = Math.floor(Math.random() * BACKGROUND_URLS.length);
+  if (nextIndex === currentBackgroundIndex) nextIndex = (nextIndex + 1) % BACKGROUND_URLS.length;
+  currentBackgroundIndex = nextIndex;
+  const url = BACKGROUND_URLS[nextIndex] ?? BACKGROUND_URLS[0];
+  backgroundLoadQueue = backgroundLoadQueue
+    .catch(() => undefined)
+    .then(() => loadPhoto360Skybox(scene, url))
+    .then(() => scheduler.markDirty())
+    .catch((err: unknown) => console.warn('[Scene] 360도 배경 로드 실패:', err));
+  return backgroundLoadQueue;
+}
 const cameraRig = new OrbitCameraRig(canvas);
 
 // 2) 애니메이션 레지스트리 — Idle 클립 6종 + 전투 연출 36종+폴백 등록(D5-1/D5-3).
@@ -135,7 +157,14 @@ app.addEventListener('click', (ev) => {
 });
 
 const bgmPlayer = new YoutubeBgmPlayer(app);
-const hud = new HUD(app, bgmPlayer, () => exitToMenu(), () => void saveCurrentGame(), () => cameraRig.resetView());
+const hud = new HUD(
+  app,
+  bgmPlayer,
+  () => exitToMenu(),
+  () => void saveCurrentGame(),
+  () => cameraRig.resetView(),
+  () => void changeBackground()
+);
 const intermissionScreen = new IntermissionScreen(app);
 const resultModal = new ResultModal(app);
 const matchmakingScreen = new MatchmakingScreen(app);
@@ -312,6 +341,7 @@ async function maybeTriggerCpuMove(session: GameSession, config: MatchConfig): P
 }
 
 function startMatch(config: MatchConfig, savedGame?: SavedGameRecord): void {
+  void changeBackground();
   // A rematch may start before the previous checkmate capture/AI task settles.
   localMatchGeneration += 1;
   if (combatDirector.isPlaying()) combatDirector.requestSkip();
@@ -701,6 +731,7 @@ function exitToMenu(): void {
 }
 
 function startOnlineMatch(config: MatchConfig): void {
+  void changeBackground();
   currentConfig = config;
   mainMenu.hide();
   matchmakingScreen.showSearching('서버 연결 중...');
@@ -940,12 +971,6 @@ cameraRig.controls.addEventListener('change', () => scheduler.markDirty());
 
 resize();
 scheduler.start();
-
-// 사용자 요청 §360도 배경 — Poly Haven "Graaff Reinet Groote Kerk"(CC0, Dario Barresi) 정방위 사진.
-// 초기 화면엔 기존 그라디언트 스카이가 즉시 보이고, 로드가 끝나면 그 자리를 대체한다.
-void loadPhoto360Skybox(scene, '/env/hdrmaps-049.jpg')
-  .then(() => scheduler.markDirty())
-  .catch((err: unknown) => console.warn('[Scene] 360도 배경 로드 실패 — 그라디언트 스카이 유지:', err));
 
 // 5) 실측 기반 최종 품질 티어 자동 감지(D9 §디바이스 자동 감지 알고리즘).
 void autoDetectQualityTier(renderer.webgl, () => renderFrame(0)).then((result) => {

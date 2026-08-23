@@ -52,7 +52,7 @@ export class MoveList {
   private pendingWhiteSan: string | null = null;
   private mobile = false;
   private mobileOpen = false;
-  private desktopCollapsed = false;
+  private desktopCollapsed = true;
 
   constructor() {
     this.el = document.createElement('div');
@@ -117,6 +117,7 @@ export class MoveList {
   private setMobile(mobile: boolean): void {
     this.mobile = mobile;
     this.tabEl.style.display = mobile ? 'block' : 'none';
+    this.tabEl.style.bottom = mobile ? 'calc(max(10px, env(safe-area-inset-bottom, 0px)) + 52px)' : '8px';
     this.headerEl.style.display = mobile ? 'none' : 'flex';
     this.listEl.style.display = 'block';
     this.el.style.cssText = mobile ? mobileStyle(this.mobileOpen) : desktopStyle(this.desktopCollapsed);

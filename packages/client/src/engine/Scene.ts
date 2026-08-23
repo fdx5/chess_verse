@@ -18,7 +18,8 @@ export const CASTLE_HALL_THEME: BoardTheme = {
   name: 'Classic White & Black',
   // 흑 기물이 어두운 칸에 묻히지 않도록 다크 칸도 밝은 쿨 그레이로 유지한다.
   tile: { light: '#F4F6F8', dark: '#AEB8C5', roughness: 0.38, metalness: 0.02 },
-  frame: { albedo: '#151922', roughness: 0.42, metalness: 0.15 },
+  // 18K yellow gold: 순금보다 약간 차분하고 따뜻한 구리빛이 도는 황금색.
+  frame: { albedo: '#D9A441', roughness: 0.22, metalness: 0.74 },
   ambientLight: { color: '#F0F5FC', intensity: 0.6 },
   // 카메라 기본 위치가 -Z(백진영 쪽)로 바뀐 것에 맞춰 키 라이트도 -Z로 옮겨 카메라 쪽에서
   // 비추는 정면광을 유지한다(그대로 두면 카메라 반대편에서 비추는 역광이 되어 버림).
@@ -81,7 +82,9 @@ function buildCheckerboard(theme: BoardTheme): THREE.Group {
 }
 
 /** D4 §8.2 — 보드 외곽 0.4 유닛 폭 프레임 (Sprint 2는 4개 박스로 단순화, 모따기는 후속 스프린트). */
-function buildFrame(theme: BoardTheme): THREE.Mesh {
+function buildFrame(theme: BoardTheme): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'frame';
   const half = BOARD_SIZE / 2;
   const outer = half + FRAME_WIDTH;
   const shape = new THREE.Shape();
@@ -100,16 +103,91 @@ function buildFrame(theme: BoardTheme): THREE.Mesh {
 
   const geom = new THREE.ExtrudeGeometry(shape, { depth: TILE_THICKNESS, bevelEnabled: false });
   geom.rotateX(Math.PI / 2);
-  geom.translate(0, -TILE_THICKNESS, 0);
 
-  const mat = new THREE.MeshStandardMaterial({
+  const mat = new THREE.MeshPhysicalMaterial({
     color: theme.frame.albedo,
     roughness: theme.frame.roughness,
     metalness: theme.frame.metalness,
+    emissive: '#2E1803',
+    emissiveIntensity: 0.1,
+    clearcoat: 0.68,
+    clearcoatRoughness: 0.14,
   });
   const mesh = new THREE.Mesh(geom, mat);
-  mesh.name = 'frame';
-  return mesh;
+  mesh.name = 'frame.base';
+  // 얇은 프레임의 자기 그림자는 카메라 이동 시 shadow acne를 만들 수 있다.
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  group.add(mesh);
+
+  const highlightMaterial = new THREE.MeshPhysicalMaterial({
+    color: '#F3C969', roughness: 0.15, metalness: 0.78,
+    emissive: '#352004', emissiveIntensity: 0.12,
+    clearcoat: 0.78, clearcoatRoughness: 0.1,
+  });
+  const shadowGoldMaterial = new THREE.MeshStandardMaterial({
+    color: '#A87520', roughness: 0.28, metalness: 0.7,
+    emissive: '#201002', emissiveIntensity: 0.08,
+  });
+
+  const railHeight = 0.026;
+  const railWidth = 0.045;
+  // 모서리 메달과 몰딩이 같은 평면에서 겹치면 z-fighting이 생기므로 양 끝을 비운다.
+  const railLength = 7.94;
+  const addRail = (x: number, z: number, width: number, depth: number, material: THREE.Material): void => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, railHeight, depth), material);
+    rail.position.set(x, railHeight / 2 + 0.004, z);
+    rail.castShadow = false;
+    rail.receiveShadow = false;
+    group.add(rail);
+  };
+  for (const edge of [half + 0.055, outer - 0.045]) {
+    const railMaterial = edge === half + 0.055 ? highlightMaterial : shadowGoldMaterial;
+    addRail(0, edge, railLength, railWidth, railMaterial);
+    addRail(0, -edge, railLength, railWidth, railMaterial);
+    addRail(edge, 0, railWidth, railLength, railMaterial);
+    addRail(-edge, 0, railWidth, railLength, railMaterial);
+  }
+
+  const ornamentGeometry = new THREE.BoxGeometry(0.14, 0.025, 0.14);
+  ornamentGeometry.rotateY(Math.PI / 4);
+  const ornamentCountPerSide = 7;
+  const ornaments = new THREE.InstancedMesh(ornamentGeometry, highlightMaterial, ornamentCountPerSide * 4);
+  const matrix = new THREE.Matrix4();
+  const ornamentCenter = half + FRAME_WIDTH * 0.5;
+  let ornamentIndex = 0;
+  for (let index = 0; index < ornamentCountPerSide; index += 1) {
+    const along = -3.15 + index * 1.05;
+    for (const [x, z] of [[along, ornamentCenter], [along, -ornamentCenter], [ornamentCenter, along], [-ornamentCenter, along]] as const) {
+      matrix.makeTranslation(x, 0.025, z);
+      ornaments.setMatrixAt(ornamentIndex, matrix);
+      ornamentIndex += 1;
+    }
+  }
+  ornaments.instanceMatrix.needsUpdate = true;
+  ornaments.castShadow = false;
+  ornaments.receiveShadow = false;
+  ornaments.name = 'frame.diamond-ornaments';
+  group.add(ornaments);
+
+  const cornerGeometry = new THREE.CylinderGeometry(0.17, 0.2, 0.036, 8);
+  const insetGeometry = new THREE.CylinderGeometry(0.075, 0.075, 0.043, 8);
+  const cornerOffset = half + FRAME_WIDTH * 0.5;
+  for (const x of [-cornerOffset, cornerOffset]) {
+    for (const z of [-cornerOffset, cornerOffset]) {
+      const cap = new THREE.Mesh(cornerGeometry, highlightMaterial);
+      cap.position.set(x, 0.025, z);
+      cap.rotation.y = Math.PI / 8;
+      cap.castShadow = false;
+      const inset = new THREE.Mesh(insetGeometry, shadowGoldMaterial);
+      inset.position.set(x, 0.048, z);
+      inset.rotation.y = Math.PI / 8;
+      inset.castShadow = false;
+      group.add(cap, inset);
+    }
+  }
+
+  return group;
 }
 
 /** 값싼 그라디언트 스카이 — 뒤집힌 구체에 y기반 정점 컬러(D4 §8.3 skybox.type='gradient'). */
@@ -202,7 +280,9 @@ export function loadPhoto360Skybox(scene: THREE.Scene, url: string): Promise<voi
           else oldSky.material.dispose();
         }
 
+        const oldBackground = scene.background;
         scene.background = texture;
+        if (oldBackground instanceof THREE.Texture) oldBackground.dispose();
         resolve();
       },
       undefined,

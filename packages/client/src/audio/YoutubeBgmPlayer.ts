@@ -14,6 +14,7 @@ interface YTPlayerOptions {
   events?: {
     onReady?: () => void;
     onStateChange?: (event: { data: number }) => void;
+    onError?: () => void;
   };
 }
 
@@ -76,6 +77,7 @@ export class YoutubeBgmPlayer {
   private playlist: string[] = [...PLAYLIST_VIDEO_IDS];
   private shuffledTrackNeedsLoad = false;
   private readonly listeners = new Set<(playing: boolean) => void>();
+  private advancing = false;
 
   constructor(container: HTMLElement) {
     // iOS 버그 수정 — 뷰포트 밖(-9999px)으로 완전히 밀어내면 iOS Safari/WebKit이 "화면 밖 = 백그라운드"로
@@ -114,6 +116,18 @@ export class YoutubeBgmPlayer {
 
   private trackIdAt(index: number): string {
     return this.playlist[index % this.playlist.length] ?? PLAYLIST_VIDEO_IDS[0];
+  }
+
+  /** 종료/재생 오류 모두 같은 경로로 처리해 플레이리스트가 멈추지 않게 한다. */
+  private advanceToNextTrack(player: YTPlayerInstance): void {
+    if (!this.playing || this.advancing) return;
+    this.advancing = true;
+    this.trackIndex = (this.trackIndex + 1) % this.playlist.length;
+    // YouTube 상태 변경 콜백 안에서 즉시 다시 로드하면 일부 브라우저에서 명령이 유실된다.
+    window.setTimeout(() => {
+      player.loadVideoById(this.trackIdAt(this.trackIndex));
+      this.advancing = false;
+    }, 0);
   }
 
   /** 새 게임마다 8곡의 순서를 다시 섞고 첫 곡부터 시작한다. */
@@ -157,10 +171,10 @@ export class YoutubeBgmPlayer {
               },
               onStateChange: (ev) => {
                 if (ev.data !== YT_STATE_ENDED) return;
-                this.trackIndex += 1;
-                player.loadVideoById(this.trackIdAt(this.trackIndex));
-                player.playVideo();
+                this.advanceToNextTrack(player);
               },
+              // 비공개/지역 제한 영상이 섞여 있어도 다음 곡으로 자동 복구한다.
+              onError: () => this.advanceToNextTrack(player),
             },
           });
         })
@@ -238,6 +252,7 @@ export class YoutubeBgmPlayer {
 
   /** 현재 곡을 건너뛰고 재생목록의 다음 곡을 즉시 재생한다. */
   async playNext(): Promise<void> {
+    this.advancing = false;
     this.trackIndex += 1;
     const videoId = this.trackIdAt(this.trackIndex);
     if (this.player !== null) {
