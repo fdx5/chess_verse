@@ -144,7 +144,8 @@ const perfOverlay = new PerfOverlay(app, renderer.webgl);
 // D10 §영속화 — 오프라인 우선 IndexedDB 기록 + 서버 히스토리 REST 동기화.
 // 배포 환경(Render 등)에서는 서버가 클라이언트 정적 빌드를 같은 오리진에서 서빙하므로 포트 없이
 // `location.origin` 그대로 쓴다. 로컬 dev는 vite(5173대)와 서버(8787)가 분리돼 있어 기존처럼 고정 포트.
-const HISTORY_API_BASE_URL = import.meta.env.DEV ? `http://${window.location.hostname}:8787` : window.location.origin;
+const DEV_SERVER_PORT = import.meta.env['VITE_SERVER_PORT'] ?? '8787';
+const HISTORY_API_BASE_URL = import.meta.env.DEV ? `http://${window.location.hostname}:${DEV_SERVER_PORT}` : window.location.origin;
 const DIFFICULTY_LABEL_KO: Record<Difficulty, string> = { beginner: '초급', intermediate: '중급', advanced: '고급', master: '마스터' };
 const historyStore = new IndexedDbStore();
 const historyClient = new HistoryClient(HISTORY_API_BASE_URL);
@@ -416,7 +417,7 @@ async function saveCurrentGame(): Promise<void> {
 // ── 온라인 대전(Sprint 9a/9c) ────────────────────────────────────────────────
 // 배포 환경은 https로 서빙되므로 mixed-content 차단을 피하려면 반드시 wss://(같은 오리진)를 써야 한다.
 const ONLINE_SERVER_URL = import.meta.env.DEV
-  ? `ws://${window.location.hostname}:8787`
+  ? `ws://${window.location.hostname}:${DEV_SERVER_PORT}`
   : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`;
 const MATCHMAKING_TIMEOUT_MS = 20_000;
 

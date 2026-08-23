@@ -59,6 +59,12 @@ export class CapturedPiecesPanel {
     this.render();
   }
 
+  setMobile(mobile: boolean): void {
+    this.el.style.top = mobile ? 'calc(env(safe-area-inset-top, 0px) + 116px)' : '64px';
+    this.el.style.left = mobile ? '8px' : '12px';
+    this.el.style.width = mobile ? 'min(190px, calc(100vw - 16px))' : 'min(220px,45vw)';
+  }
+
   private buildRow(label: string): { container: HTMLDivElement; iconsEl: HTMLDivElement } {
     const container = document.createElement('div');
     container.style.cssText = 'display:flex;flex-direction:column;gap:2px;';

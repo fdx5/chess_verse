@@ -16,7 +16,8 @@ export interface BoardTheme {
 export const CASTLE_HALL_THEME: BoardTheme = {
   id: 'classic-white-black',
   name: 'Classic White & Black',
-  tile: { light: '#EBF0F7', dark: '#242B38', roughness: 0.3, metalness: 0.05 },
+  // 흑 기물이 어두운 칸에 묻히지 않도록 다크 칸도 밝은 쿨 그레이로 유지한다.
+  tile: { light: '#F4F6F8', dark: '#AEB8C5', roughness: 0.38, metalness: 0.02 },
   frame: { albedo: '#151922', roughness: 0.42, metalness: 0.15 },
   ambientLight: { color: '#F0F5FC', intensity: 0.6 },
   // 카메라 기본 위치가 -Z(백진영 쪽)로 바뀐 것에 맞춰 키 라이트도 -Z로 옮겨 카메라 쪽에서

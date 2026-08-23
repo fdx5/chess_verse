@@ -3,6 +3,7 @@ import { TurnIndicator } from './TurnIndicator';
 import { MoveList } from './MoveList';
 import { CapturedPiecesPanel } from './CapturedPiecesPanel';
 import type { YoutubeBgmPlayer } from '../audio/YoutubeBgmPlayer';
+import { isMobileLayout, onLayoutChange } from './responsive/Breakpoints';
 
 const PROMOTION_CHOICES: readonly { type: PieceType; label: string }[] = [
   { type: 'q', label: '퀸' },
@@ -18,6 +19,8 @@ export class HUD {
   readonly moveList = new MoveList();
   private readonly capturedPanel = new CapturedPiecesPanel();
   private readonly promotionModal: HTMLDivElement;
+  private readonly mobileHeader: HTMLDivElement;
+  private readonly topLeftRow: HTMLDivElement;
 
   constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void, onSaveGame: () => void, onResetCamera?: () => void) {
     this.root = document.createElement('div');
@@ -27,9 +30,13 @@ export class HUD {
     this.root.appendChild(this.moveList.tabEl);
     this.root.appendChild(this.capturedPanel.el);
 
-    const topLeftRow = document.createElement('div');
-    topLeftRow.style.cssText = 'position:absolute;top:12px;left:12px;display:flex;gap:8px;pointer-events:none;';
-    this.root.appendChild(topLeftRow);
+    this.mobileHeader = document.createElement('div');
+    this.mobileHeader.style.cssText = 'display:contents;';
+    this.root.appendChild(this.mobileHeader);
+
+    this.topLeftRow = document.createElement('div');
+    this.topLeftRow.style.cssText = 'position:absolute;top:12px;left:12px;display:flex;gap:8px;pointer-events:none;';
+    this.root.appendChild(this.topLeftRow);
 
     const cornerBtnStyle = [
       'min-height:44px',
@@ -50,14 +57,14 @@ export class HUD {
     bgmPlayer.onStateChange((playing) => {
       bgmBtn.textContent = playing ? 'BGM 끄기' : 'BGM 켜기';
     });
-    topLeftRow.appendChild(bgmBtn);
+    this.topLeftRow.appendChild(bgmBtn);
 
     const nextBgmBtn = document.createElement('button');
     nextBgmBtn.textContent = '다음 곡 ▶';
     nextBgmBtn.title = 'BGM 다음 곡 재생';
     nextBgmBtn.style.cssText = cornerBtnStyle;
     nextBgmBtn.addEventListener('click', () => void bgmPlayer.playNext());
-    topLeftRow.appendChild(nextBgmBtn);
+    this.topLeftRow.appendChild(nextBgmBtn);
 
     // 사용자 요청 §시점 초기화 버튼 — 상단 BGM 버튼 오른쪽에 배치
     const resetCamBtn = document.createElement('button');
@@ -67,7 +74,7 @@ export class HUD {
     resetCamBtn.addEventListener('click', () => {
       onResetCamera?.();
     });
-    topLeftRow.appendChild(resetCamBtn);
+    this.topLeftRow.appendChild(resetCamBtn);
 
     const exitBtn = document.createElement('button');
     exitBtn.textContent = '메뉴로 나가기';
@@ -75,13 +82,13 @@ export class HUD {
     exitBtn.addEventListener('click', () => {
       if (window.confirm('메인 메뉴로 나가시겠습니까? 진행 중인 대전은 패배로 처리될 수 있습니다.')) onExitToMenu();
     });
-    topLeftRow.appendChild(exitBtn);
+    this.topLeftRow.appendChild(exitBtn);
 
     const saveBtn = document.createElement('button');
     saveBtn.textContent = '게임 저장';
     saveBtn.style.cssText = cornerBtnStyle;
     saveBtn.addEventListener('click', onSaveGame);
-    topLeftRow.appendChild(saveBtn);
+    this.topLeftRow.appendChild(saveBtn);
 
     this.promotionModal = document.createElement('div');
     this.promotionModal.style.cssText = [
@@ -96,6 +103,49 @@ export class HUD {
     this.root.appendChild(this.promotionModal);
 
     container.appendChild(this.root);
+
+    this.setMobile(isMobileLayout());
+    onLayoutChange((mobile) => this.setMobile(mobile));
+  }
+
+  private setMobile(mobile: boolean): void {
+    if (mobile) {
+      this.mobileHeader.style.cssText = [
+        'position:absolute',
+        'top:calc(env(safe-area-inset-top, 0px) + 8px)',
+        'left:8px',
+        'right:8px',
+        'display:flex',
+        'flex-direction:column',
+        'gap:6px',
+        'z-index:20',
+        'pointer-events:none',
+      ].join(';');
+      this.topLeftRow.style.cssText = 'position:relative;top:auto;left:auto;width:100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;pointer-events:none;';
+      this.topLeftRow.querySelectorAll('button').forEach((button) => {
+        button.style.minWidth = '0';
+        button.style.minHeight = '46px';
+        button.style.padding = '4px 2px';
+        button.style.fontSize = '11px';
+        button.style.lineHeight = '1.15';
+        button.style.whiteSpace = 'normal';
+      });
+      this.mobileHeader.append(this.topLeftRow, this.turnIndicator.el);
+    } else {
+      this.mobileHeader.style.cssText = 'display:contents;';
+      this.topLeftRow.style.cssText = 'position:absolute;top:12px;left:12px;display:flex;gap:8px;pointer-events:none;';
+      this.topLeftRow.querySelectorAll('button').forEach((button) => {
+        button.style.minWidth = '';
+        button.style.minHeight = '44px';
+        button.style.padding = '6px 14px';
+        button.style.fontSize = '13px';
+        button.style.lineHeight = '';
+        button.style.whiteSpace = '';
+      });
+      this.root.append(this.turnIndicator.el, this.topLeftRow);
+    }
+    this.turnIndicator.setMobile(mobile);
+    this.capturedPanel.setMobile(mobile);
   }
 
   setTurnText(text: string): void {

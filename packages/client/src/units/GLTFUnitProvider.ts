@@ -145,29 +145,29 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
       emissive: '#5C7498',
       emissiveIntensity: 0.14,
     },
-    // 나이트 (Knight): 사용자 요청 §폰과 확실한 차별화 — 딥 블러드 크림슨 아머 (#58141E) & 샤이니 플래티넘 골드
+    // 나이트 (Knight): 백의 파스텔 블루와 혼동되지 않는 선명한 코발트 네이비
     n: {
-      primary: '#58141E',
-      accent: '#F59E0B',
-      pedestal: '#2A0B10',
+      primary: '#123A73',
+      accent: '#42A5FF',
+      pedestal: '#0B1E3A',
       metalness: 0.75,
       roughness: 0.22,
       clearcoat: 0.85,
       clearcoatRoughness: 0.08,
-      emissive: '#831843',
-      emissiveIntensity: 0.15,
+      emissive: '#1261B8',
+      emissiveIntensity: 0.18,
     },
-    // 비숍 (Bishop): 매혹적인 다크 아메시스트 퍼플 (#3C244E) & 네온 바이올렛 글로우
+    // 비숍 (Bishop): 백의 라벤더와 정반대인 딥 에메랄드/터쿼이즈
     b: {
-      primary: '#3C244E',
-      accent: '#D070FF',
-      pedestal: '#22142E',
+      primary: '#07594F',
+      accent: '#32E0C4',
+      pedestal: '#06352F',
       metalness: 0.3,
       roughness: 0.28,
       clearcoat: 0.75,
       clearcoatRoughness: 0.1,
-      emissive: '#A540E8',
-      emissiveIntensity: 0.15,
+      emissive: '#00A98F',
+      emissiveIntensity: 0.18,
     },
     // 흑 룩 (Black Rook): 사용자 요청 §더 어둡게 톤다운 — 딥 흑요석 다크 건메탈 (#151820) & 딥 사파이어 블루 (#1D6FB8)
     r: {
@@ -181,29 +181,29 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
       emissive: '#1D4ED8',
       emissiveIntensity: 0.08,
     },
-    // 퀸 (Queen): 매혹적인 로열 딥 버건디 크림슨 (#52182B) & 러스터 골드
+    // 퀸 (Queen): 백의 로즈 파스텔과 확실히 갈리는 강한 진홍/구리색
     q: {
-      primary: '#52182B',
-      accent: '#E8A845',
-      pedestal: '#2C0D17',
+      primary: '#7A1025',
+      accent: '#FF7A45',
+      pedestal: '#400817',
       metalness: 0.55,
       roughness: 0.2,
       clearcoat: 0.9,
       clearcoatRoughness: 0.08,
-      emissive: '#C02048',
-      emissiveIntensity: 0.16,
+      emissive: '#D51F45',
+      emissiveIntensity: 0.2,
     },
-    // 킹 (King): 사용자 요청 §누런 톤 제거 및 위엄 강화 — 딥 흑요석 나이트 로브 (#161922) & 루미너스 플래티넘 실버/아메시스트 크리스탈 (#E2E8F0)
+    // 킹 (King): 백의 밝은 스카이 퍼플과 대비되는 로열 바이올렛/마젠타
     k: {
-      primary: '#161922',
-      accent: '#E2E8F0',
-      pedestal: '#0F1218',
+      primary: '#3B176B',
+      accent: '#E05CFF',
+      pedestal: '#210B3D',
       metalness: 0.85,
       roughness: 0.16,
       clearcoat: 0.95,
       clearcoatRoughness: 0.06,
-      emissive: '#7C3AED',
-      emissiveIntensity: 0.18,
+      emissive: '#8B2BE2',
+      emissiveIntensity: 0.22,
     },
   },
 };
