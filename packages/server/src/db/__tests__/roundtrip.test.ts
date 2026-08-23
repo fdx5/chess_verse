@@ -108,8 +108,9 @@ describe('D10-10 §1 왕복 통합 테스트', () => {
     const publicRes = await fetch(`${baseUrl}/api/v1/matches?limit=20`);
     expect(publicRes.status).toBe(200);
     const publicPage = (await publicRes.json()) as PublicMatchLogPageDto;
-    expect(publicPage.matches[0]?.whiteLabel).toBe(playerId);
+    expect(publicPage.matches[0]?.whiteLabel).toBe('RoundTester');
     expect(publicPage.matches[0]?.whiteLabel).not.toBe('(나)');
+    expect(publicPage.matches[0]?.whiteLabel).not.toBe(playerId);
 
     const detailRes = await fetch(`${baseUrl}/api/v1/matches/${serverMatchId}`, {
       headers: { 'x-bcr-player-id': playerId, 'x-bcr-player-secret': secret },

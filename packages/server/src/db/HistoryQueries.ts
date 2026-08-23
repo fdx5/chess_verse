@@ -75,10 +75,14 @@ export class HistoryQueries {
     const cappedLimit = Math.min(Math.max(Math.trunc(limit) || 50, 1), 100);
     const cursor = before ?? Number.MAX_SAFE_INTEGER;
     const res = await this.client.execute({
-      sql: `SELECT id, source, player_white_id, player_black_id, white_label, black_label, score_white, score_black,
-                   result, game_count, ended_at
-            FROM matches WHERE ended_at < ?
-            ORDER BY ended_at DESC LIMIT ?`,
+      sql: `SELECT m.id, m.source, m.player_white_id, m.player_black_id, m.white_label, m.black_label,
+                   white_player.nickname AS white_nickname, black_player.nickname AS black_nickname,
+                   m.score_white, m.score_black, m.result, m.game_count, m.ended_at
+            FROM matches m
+            LEFT JOIN players white_player ON white_player.id = m.player_white_id
+            LEFT JOIN players black_player ON black_player.id = m.player_black_id
+            WHERE m.ended_at < ?
+            ORDER BY m.ended_at DESC LIMIT ?`,
       args: [cursor, cappedLimit + 1],
     });
     const totalRes = await this.client.execute('SELECT COUNT(*) AS c FROM matches');
@@ -87,8 +91,16 @@ export class HistoryQueries {
     const matches = rows.map((row) => ({
       matchId: String(row['id']),
       source: row['source'] as MatchSource,
-      whiteLabel: String(row['white_label']) === '(나)' && row['player_white_id'] !== null ? String(row['player_white_id']) : String(row['white_label']),
-      blackLabel: String(row['black_label']) === '(나)' && row['player_black_id'] !== null ? String(row['player_black_id']) : String(row['black_label']),
+      // 로컬 전적은 본인을 '(나)'로 저장한다. 공개 로그에서는 내부 playerId/인증 토큰을 절대
+      // 노출하지 않고 players 테이블의 공개 닉네임으로 치환한다.
+      whiteLabel:
+        String(row['white_label']) === '(나)' || String(row['white_label']) === String(row['player_white_id'])
+          ? (row['white_nickname'] !== null ? String(row['white_nickname']) : '플레이어')
+          : String(row['white_label']),
+      blackLabel:
+        String(row['black_label']) === '(나)' || String(row['black_label']) === String(row['player_black_id'])
+          ? (row['black_nickname'] !== null ? String(row['black_nickname']) : '플레이어')
+          : String(row['black_label']),
       scoreWhite: Number(row['score_white']),
       scoreBlack: Number(row['score_black']),
       result: row['result'] as 'white' | 'black' | 'draw' | 'aborted',
