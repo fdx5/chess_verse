@@ -54,7 +54,9 @@ export function getGameResult(pos: Position, history: readonly Position[]): Game
     return { kind: 'stalemate' };
   }
 
-  if (pos.halfmoveClock >= 100) {
+  // Product rule: a game ends after 50 complete turns regardless of pawn moves or captures.
+  // fullmoveNumber advances after Black moves, so 51 means 50 turns were completed.
+  if (pos.fullmoveNumber > 50) {
     return { kind: 'draw', reason: 'fifty_move' };
   }
   if (countOccurrences(history, pos.hash) >= 3) {

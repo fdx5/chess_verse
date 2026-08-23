@@ -75,7 +75,7 @@ export class HistoryQueries {
     const cappedLimit = Math.min(Math.max(Math.trunc(limit) || 50, 1), 100);
     const cursor = before ?? Number.MAX_SAFE_INTEGER;
     const res = await this.client.execute({
-      sql: `SELECT id, source, white_label, black_label, score_white, score_black,
+      sql: `SELECT id, source, player_white_id, player_black_id, white_label, black_label, score_white, score_black,
                    result, game_count, ended_at
             FROM matches WHERE ended_at < ?
             ORDER BY ended_at DESC LIMIT ?`,
@@ -87,8 +87,8 @@ export class HistoryQueries {
     const matches = rows.map((row) => ({
       matchId: String(row['id']),
       source: row['source'] as MatchSource,
-      whiteLabel: String(row['white_label']),
-      blackLabel: String(row['black_label']),
+      whiteLabel: String(row['white_label']) === '(나)' && row['player_white_id'] !== null ? String(row['player_white_id']) : String(row['white_label']),
+      blackLabel: String(row['black_label']) === '(나)' && row['player_black_id'] !== null ? String(row['player_black_id']) : String(row['black_label']),
       scoreWhite: Number(row['score_white']),
       scoreBlack: Number(row['score_black']),
       result: row['result'] as 'white' | 'black' | 'draw' | 'aborted',

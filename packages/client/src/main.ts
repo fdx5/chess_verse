@@ -47,9 +47,11 @@ import { MatchmakingScreen } from './ui/MatchmakingScreen';
 import { NicknameModal } from './ui/NicknameModal';
 import { HistoryScreen } from './ui/HistoryScreen';
 import { LeaderboardScreen } from './ui/LeaderboardScreen';
+import { SavedGamesScreen } from './ui/SavedGamesScreen';
 import { PerfOverlay } from './ui/PerfOverlay';
 import { YoutubeBgmPlayer } from './audio/YoutubeBgmPlayer';
 import { IndexedDbStore } from './persistence/IndexedDbStore';
+import type { SavedGameRecord } from './persistence/schema';
 import { MatchRecorder } from './persistence/MatchRecorder';
 import { HistoryClient } from './persistence/HistoryClient';
 import { SyncEngine } from './persistence/SyncEngine';
@@ -133,7 +135,7 @@ app.addEventListener('click', (ev) => {
 });
 
 const bgmPlayer = new YoutubeBgmPlayer(app);
-const hud = new HUD(app, bgmPlayer, () => exitToMenu(), () => cameraRig.resetView());
+const hud = new HUD(app, bgmPlayer, () => exitToMenu(), () => void saveCurrentGame(), () => cameraRig.resetView());
 const intermissionScreen = new IntermissionScreen(app);
 const resultModal = new ResultModal(app);
 const matchmakingScreen = new MatchmakingScreen(app);
@@ -149,6 +151,15 @@ const historyClient = new HistoryClient(HISTORY_API_BASE_URL);
 const syncEngine = new SyncEngine(historyStore, historyClient);
 const matchRecorder = new MatchRecorder(historyStore);
 let currentIdentity: PlayerIdentity | null = null;
+let activeSaveId: string | null = null;
+let currentMatchStartedAt = Date.now();
+
+function refreshElapsedTime(): void {
+  const startedAt = currentConfig?.source === 'online' ? onlineMatchStartedAt : matchController === null ? null : currentMatchStartedAt;
+  hud.setElapsedSeconds(startedAt === null ? 0 : (Date.now() - startedAt) / 1000);
+}
+
+setInterval(refreshElapsedTime, 1000);
 
 let aiHandle: AiWorkerHandle | null = null;
 function getAiHandle(): AiWorkerHandle {
@@ -168,6 +179,8 @@ let inputLocked = false;
 let matchController: MatchController | null = null;
 let hotSeat: HotSeatController | null = null;
 let currentConfig: MatchConfig | null = null;
+let localMatchGeneration = 0;
+const cpuMoveRequests = new Set<GameSession>();
 
 /** 로컬/CPU/온라인 공통 — 클릭한 칸을 선택 or 이동 시도로 해석한다. */
 function handleBoardClick(session: GameSession, square: Square | null, beforeAttempt?: () => void): void {
@@ -217,12 +230,17 @@ function refreshTurnStatusText(): void {
   if (currentConfig?.source === 'online') {
     if (onlineSession === null) return;
     hud.setTurnText(onlineSession.getPosition().turn === onlineMyColor ? '내 차례' : '상대 차례');
+    hud.setDrawTurnsRemaining(Math.max(0, 51 - onlineSession.getPosition().fullmoveNumber));
     return;
   }
-  if (hotSeat !== null) hud.setTurnText(hotSeat.getStatusText());
+  if (hotSeat !== null) {
+    hud.setTurnText(hotSeat.getStatusText());
+    const position = matchController?.getSession().getPosition();
+    if (position !== undefined) hud.setDrawTurnsRemaining(Math.max(0, 51 - position.fullmoveNumber));
+  }
 }
 
-function bindSessionEvents(session: GameSession, config: MatchConfig): void {
+function bindSessionEvents(session: GameSession, config: MatchConfig, generation = localMatchGeneration): void {
   hotSeat = new HotSeatController(session);
   unitBoard.initFromPosition(session.getPosition());
   hud.resetMoveList();
@@ -240,10 +258,12 @@ function bindSessionEvents(session: GameSession, config: MatchConfig): void {
     const captured = capturedPieceOf(move, prevPosition);
     if (captured !== null) hud.recordCapture(prevPosition.turn, captured.type);
     inputLocked = true;
+    hud.setDrawTurnsRemaining(Math.max(0, 51 - session.getPosition().fullmoveNumber));
 
     const isCapture = (move.flags & MoveFlag.CAPTURE) !== 0;
     if (isCapture) {
       void combatDirector.playCapture(move, prevPosition).then(() => {
+        if (generation !== localMatchGeneration) return;
         inputLocked = false;
         refreshTurnStatusText();
         scheduler.markDirty();
@@ -269,10 +289,12 @@ function bindSessionEvents(session: GameSession, config: MatchConfig): void {
 
 async function maybeTriggerCpuMove(session: GameSession, config: MatchConfig): Promise<void> {
   if (config.source !== 'cpu' || matchController === null) return;
+  if (cpuMoveRequests.has(session)) return;
   const humanColor = matchController.getMyColorForCurrentGame();
   const cpuColor = otherColor(humanColor);
   if (session.getPosition().turn !== cpuColor) return;
 
+  cpuMoveRequests.add(session);
   const difficulty = config.cpuDifficulty ?? 'intermediate';
   const start = performance.now();
   const { move } = await getAiHandle().requestMove(session.getPosition(), difficulty, MOVETIME_MS[difficulty]);
@@ -280,16 +302,39 @@ async function maybeTriggerCpuMove(session: GameSession, config: MatchConfig): P
   const remaining = MIN_THINK_DELAY_MS[difficulty] - elapsed;
   if (remaining > 0) await sleep(remaining);
 
-  if (matchController === null || matchController.getSession() !== session) return; // 그 사이 매치가 바뀌었으면 폐기
+  if (matchController === null || matchController.getSession() !== session) {
+    cpuMoveRequests.delete(session);
+    return;
+  }
   session.attemptMove(move.promo === undefined ? { from: move.from, to: move.to } : { from: move.from, to: move.to, promo: move.promo });
+  cpuMoveRequests.delete(session);
 }
 
-function startMatch(config: MatchConfig): void {
+function startMatch(config: MatchConfig, savedGame?: SavedGameRecord): void {
+  // A rematch may start before the previous checkmate capture/AI task settles.
+  localMatchGeneration += 1;
+  if (combatDirector.isPlaying()) combatDirector.requestSkip();
+  inputLocked = false;
+  aiHandle?.dispose();
+  aiHandle = null;
+  cpuMoveRequests.clear();
   currentConfig = config;
+  activeSaveId = savedGame?.saveId ?? null;
+  currentMatchStartedAt = savedGame?.matchStartedAt ?? Date.now();
   mainMenu.hide();
-  matchController = new MatchController(config);
+  matchController = new MatchController(config, savedGame === undefined ? undefined : {
+    localMatchId: savedGame.localMatchId,
+    gameIndex: savedGame.gameIndex,
+    scoreMine: savedGame.scoreMine,
+    scoreOpponent: savedGame.scoreOpponent,
+    completedGames: savedGame.completedGames,
+    currentFen: savedGame.currentFen,
+    currentMovesSan: savedGame.currentMovesSan,
+    gameStartedAt: savedGame.gameStartedAt,
+  });
 
-  matchController.bus.on('match:gameStarted', ({ session }) => bindSessionEvents(session, config));
+  const generation = localMatchGeneration;
+  matchController.bus.on('match:gameStarted', ({ session }) => bindSessionEvents(session, config, generation));
   matchController.bus.on('match:gameEnded', ({ gameIndex, result, scoreMine, scoreOpponent }) => {
     const controller = matchController;
     if (controller === null) return;
@@ -297,6 +342,7 @@ function startMatch(config: MatchConfig): void {
     intermissionScreen.show(gameIndex, result, scoreMine, scoreOpponent, '다음 판 시작', () => controller.startNextGame());
   });
   matchController.bus.on('game:matchEnded', ({ localMatchId, source, format, outcome, scoreMine, scoreOpponent, games }) => {
+    void deleteActiveSavedGame();
     if (currentIdentity !== null) {
       const firstGame = games[0];
       const lastGame = games[games.length - 1];
@@ -336,7 +382,35 @@ function startMatch(config: MatchConfig): void {
     );
   });
 
-  bindSessionEvents(matchController.getSession(), config);
+  bindSessionEvents(matchController.getSession(), config, generation);
+  if (savedGame !== undefined) {
+    savedGame.currentMovesSan.forEach((san, index) => hud.pushMove(san, index % 2 === 0 ? 'w' : 'b'));
+  }
+}
+
+async function deleteActiveSavedGame(): Promise<void> {
+  const saveId = activeSaveId;
+  activeSaveId = null;
+  if (saveId !== null) await historyStore.deleteSavedGame(saveId);
+  await refreshContinueAvailability();
+}
+
+async function saveCurrentGame(): Promise<void> {
+  if (currentIdentity === null || currentConfig === null || matchController === null || currentConfig.source === 'online') return;
+  const state = matchController.getResumeState();
+  const saveId = activeSaveId ?? crypto.randomUUID();
+  activeSaveId = saveId;
+  await historyStore.putSavedGame({
+    saveId,
+    playerId: currentIdentity.playerId,
+    config: currentConfig,
+    ...state,
+    matchStartedAt: currentMatchStartedAt,
+    savedAt: Date.now(),
+  });
+  await refreshContinueAvailability();
+  hud.setTurnText('게임을 저장했습니다');
+  setTimeout(() => refreshTurnStatusText(), 1400);
 }
 
 // ── 온라인 대전(Sprint 9a/9c) ────────────────────────────────────────────────
@@ -441,6 +515,7 @@ function bindOnlineSessionEvents(session: GameSession): void {
     const captured = capturedPieceOf(move, prevPosition);
     if (captured !== null) hud.recordCapture(prevPosition.turn, captured.type);
     inputLocked = true;
+    hud.setDrawTurnsRemaining(Math.max(0, 51 - session.getPosition().fullmoveNumber));
 
     if (lastMoveWasLocalInput && onlineMatchId !== null && netClient !== null) {
       lastMoveWasLocalInput = false;
@@ -607,6 +682,9 @@ function disconnectOnline(): void {
 /** 사용자 요청 §인게임 메뉴 나가기 버튼 — 온라인은 연결을 끊어 상대측에 이탈로 처리되게 하고,
  * 로컬/CPU는 매치 컨트롤러를 폐기해 이후 CPU 수순 트리거(maybeTriggerCpuMove)가 무시되게 한다. */
 function exitToMenu(): void {
+  // 저장 후 메뉴로 이동하는 것은 이어서 하기의 정상 진입 경로이므로 슬롯을 유지한다.
+  // 저장 슬롯은 해당 대국이 실제 결과로 종료될 때 game:matchEnded에서 삭제한다.
+  activeSaveId = null;
   if (currentConfig?.source === 'online') {
     disconnectOnline();
   } else {
@@ -615,6 +693,7 @@ function exitToMenu(): void {
   }
   matchmakingScreen.hide();
   mainMenu.show();
+  void refreshContinueAvailability();
 }
 
 function startOnlineMatch(config: MatchConfig): void {
@@ -682,6 +761,7 @@ const settingsScreen = new SettingsScreen(app, {
   },
 });
 const nicknameModal = new NicknameModal(app, historyClient);
+const savedGamesScreen = new SavedGamesScreen(app, () => mainMenu.show());
 const leaderboardScreen = new LeaderboardScreen(
   app,
   historyStore,
@@ -707,8 +787,29 @@ const mainMenu = new MainMenu(
       mainMenu.show();
       void onIdentityReady(identity);
     }, true, () => mainMenu.show(), currentIdentity?.nickname);
-  }
+  },
+  () => void openSavedGames()
 );
+
+async function refreshContinueAvailability(): Promise<void> {
+  if (currentIdentity === null) {
+    mainMenu.setContinueAvailable(false);
+    return;
+  }
+  const games = await historyStore.listSavedGames(currentIdentity.playerId);
+  mainMenu.setContinueAvailable(games.length > 0);
+}
+
+async function openSavedGames(): Promise<void> {
+  if (currentIdentity === null) return;
+  const games = await historyStore.listSavedGames(currentIdentity.playerId);
+  if (games.length === 0) {
+    mainMenu.setContinueAvailable(false);
+    return;
+  }
+  mainMenu.hide();
+  savedGamesScreen.show(games, (savedGame) => startMatch(savedGame.config, savedGame));
+}
 
 /** 지금 클릭/탭/드래그를 받아도 되는 세션을 반환한다(없으면 null) — 로컬/CPU/온라인 공통 게이팅. */
 function getInteractableSession(): GameSession | null {
@@ -868,6 +969,7 @@ async function onIdentityReady(identity: PlayerIdentity): Promise<void> {
     // 서버가 꺼져 있어도 로컬 플레이/전적 조회는 정상 동작한다(D10-1 §오프라인만 플레이하는 사용자).
   }
   setTimeout(() => void syncEngine.syncNow(), 2000); // D10-2 트리거 ① 부팅 2초 시점
+  await refreshContinueAvailability();
 }
 
 window.addEventListener('online', () => void syncEngine.syncNow()); // D10-2 트리거 ②

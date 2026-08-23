@@ -3,7 +3,23 @@ import type { Difficulty } from '../ai/AiWorkerHandle';
 import type { MatchFormat, MatchOutcome, MatchSource } from '../game/MatchState';
 
 export const DB_NAME = 'bcr-history';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
+
+export interface SavedGameRecord {
+  saveId: string;
+  playerId: string;
+  config: import('../game/MatchState').MatchConfig;
+  localMatchId: string;
+  gameIndex: number;
+  scoreMine: number;
+  scoreOpponent: number;
+  completedGames: import('../game/MatchState').LocalGameRecord[];
+  currentFen: string;
+  currentMovesSan: string[];
+  matchStartedAt: number;
+  gameStartedAt: number;
+  savedAt: number;
+}
 
 /** D10-3 §SyncState — `games` 스토어는 `game/MatchState.ts`의 `LocalGameRecord`를 그대로 재사용한다. */
 export type SyncState = 'local' | 'pending' | 'synced' | 'rejected' | 'deferred';

@@ -3,6 +3,17 @@ import { EventBus } from './EventBus';
 import { GameSession } from './GameSession';
 import { buildGameRecord, type LocalGameRecord, type MatchConfig, type MatchOutcome } from './MatchState';
 
+export interface MatchResumeState {
+  localMatchId: string;
+  gameIndex: number;
+  scoreMine: number;
+  scoreOpponent: number;
+  completedGames: LocalGameRecord[];
+  currentFen: string;
+  currentMovesSan: string[];
+  gameStartedAt: number;
+}
+
 export interface MatchEventMap {
   'match:gameStarted': { gameIndex: number; myColor: Color; session: GameSession };
   'match:gameEnded': { gameIndex: number; result: GameResult; scoreMine: number; scoreOpponent: number };
@@ -33,8 +44,8 @@ const WIN_SCORE_BO3 = 2;
  */
 export class MatchController {
   readonly bus = new EventBus<MatchEventMap>();
-  private readonly localMatchId = generateId();
-  private readonly games: LocalGameRecord[] = [];
+  private readonly localMatchId: string;
+  private readonly games: LocalGameRecord[];
   private scoreMine = 0;
   private scoreOpponent = 0;
   private gameIndex = 0;
@@ -43,8 +54,15 @@ export class MatchController {
   private gameStartedAt = Date.now();
   private unsubscribeMove: (() => void) | null = null;
 
-  constructor(private readonly config: MatchConfig) {
-    this.session = new GameSession();
+  constructor(private readonly config: MatchConfig, resume?: MatchResumeState) {
+    this.localMatchId = resume?.localMatchId ?? generateId();
+    this.games = resume?.completedGames.slice() ?? [];
+    this.scoreMine = resume?.scoreMine ?? 0;
+    this.scoreOpponent = resume?.scoreOpponent ?? 0;
+    this.gameIndex = resume?.gameIndex ?? 0;
+    this.sanMoves = resume?.currentMovesSan.slice() ?? [];
+    this.gameStartedAt = resume?.gameStartedAt ?? Date.now();
+    this.session = new GameSession(resume?.currentFen);
     this.wireSession();
   }
 
@@ -63,6 +81,19 @@ export class MatchController {
 
   getScore(): { mine: number; opponent: number } {
     return { mine: this.scoreMine, opponent: this.scoreOpponent };
+  }
+
+  getResumeState(): MatchResumeState {
+    return {
+      localMatchId: this.localMatchId,
+      gameIndex: this.gameIndex,
+      scoreMine: this.scoreMine,
+      scoreOpponent: this.scoreOpponent,
+      completedGames: this.games.slice(),
+      currentFen: toFEN(this.session.getPosition()),
+      currentMovesSan: this.sanMoves.slice(),
+      gameStartedAt: this.gameStartedAt,
+    };
   }
 
   isMatchComplete(): boolean {

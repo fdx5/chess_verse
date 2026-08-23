@@ -180,4 +180,22 @@ export class YoutubeBgmPlayer {
     }
     this.notify();
   }
+
+  /** 현재 곡을 건너뛰고 재생목록의 다음 곡을 즉시 재생한다. */
+  async playNext(): Promise<void> {
+    this.trackIndex += 1;
+    const videoId = trackIdAt(this.trackIndex);
+    if (this.player !== null) {
+      this.player.loadVideoById(videoId);
+      this.player.playVideo();
+      this.playing = true;
+      this.notify();
+      return;
+    }
+    const player = await this.ensurePlayer();
+    player.loadVideoById(videoId);
+    player.playVideo();
+    this.playing = true;
+    this.notify();
+  }
 }

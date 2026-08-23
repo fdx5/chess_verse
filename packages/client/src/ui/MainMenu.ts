@@ -27,6 +27,7 @@ export class MainMenu {
   private difficulty: Difficulty = 'intermediate';
   private difficultySection: HTMLDivElement;
   private playerBadgeText: HTMLSpanElement | null = null;
+  private readonly continueBtn: HTMLButtonElement;
 
   constructor(
     container: HTMLElement,
@@ -34,7 +35,8 @@ export class MainMenu {
     onOpenSettings: () => void,
     onOpenLeaderboard: () => void,
     bgmPlayer: YoutubeBgmPlayer,
-    onChangeIdentity?: () => void
+    onChangeIdentity?: () => void,
+    onContinue?: () => void
   ) {
     this.el = document.createElement('div');
     this.el.style.cssText = [
@@ -117,6 +119,11 @@ export class MainMenu {
       });
     }));
 
+    this.continueBtn = this.buildStartButton(() => onContinue?.());
+    this.continueBtn.textContent = '이어서 하기';
+    this.continueBtn.style.display = 'none';
+    card.appendChild(this.continueBtn);
+
     container.appendChild(this.el);
   }
 
@@ -124,6 +131,10 @@ export class MainMenu {
     if (this.playerBadgeText) {
       this.playerBadgeText.textContent = nickname;
     }
+  }
+
+  setContinueAvailable(available: boolean): void {
+    this.continueBtn.style.display = available ? 'block' : 'none';
   }
 
   private buildToolbar(

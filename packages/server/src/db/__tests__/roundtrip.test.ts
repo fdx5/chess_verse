@@ -5,7 +5,7 @@ import { PlayerRepository } from '../PlayerRepository';
 import { MatchRepository } from '../MatchRepository';
 import { HistoryQueries } from '../HistoryQueries';
 import { handleHistoryApiRequest } from '../../http/historyApi';
-import type { IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, SyncMatchDto, SyncResponseDto } from '@battle-chess/protocol';
+import type { IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, PublicMatchLogPageDto, SyncMatchDto, SyncResponseDto } from '@battle-chess/protocol';
 
 let httpServer: Server;
 let baseUrl: string;
@@ -104,6 +104,12 @@ describe('D10-10 §1 왕복 통합 테스트', () => {
     expect(page.matches[0]?.matchId).toBe(serverMatchId);
     expect(page.matches[0]?.verified).toBe(false);
     expect(page.matches[0]?.outcome).toBe('win');
+
+    const publicRes = await fetch(`${baseUrl}/api/v1/matches?limit=20`);
+    expect(publicRes.status).toBe(200);
+    const publicPage = (await publicRes.json()) as PublicMatchLogPageDto;
+    expect(publicPage.matches[0]?.whiteLabel).toBe(playerId);
+    expect(publicPage.matches[0]?.whiteLabel).not.toBe('(나)');
 
     const detailRes = await fetch(`${baseUrl}/api/v1/matches/${serverMatchId}`, {
       headers: { 'x-bcr-player-id': playerId, 'x-bcr-player-secret': secret },

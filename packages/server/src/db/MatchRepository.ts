@@ -145,8 +145,8 @@ export class MatchRepository {
     const opponentColor: Color = myColor === 'w' ? 'b' : 'w';
     const playerWhiteId = myColor === 'w' ? input.submittedByPlayerId : null;
     const playerBlackId = myColor === 'b' ? input.submittedByPlayerId : null;
-    const whiteLabel = myColor === 'w' ? '(나)' : input.opponentLabel;
-    const blackLabel = myColor === 'b' ? '(나)' : input.opponentLabel;
+    const whiteLabel = myColor === 'w' ? input.submittedByPlayerId : input.opponentLabel;
+    const blackLabel = myColor === 'b' ? input.submittedByPlayerId : input.opponentLabel;
     const scoreWhite = myColor === 'w' ? input.scoreMine : input.scoreOpponent;
     const scoreBlack = myColor === 'b' ? input.scoreMine : input.scoreOpponent;
     const result: 'white' | 'black' | 'draw' | 'aborted' =

@@ -19,7 +19,7 @@ export class HUD {
   private readonly capturedPanel = new CapturedPiecesPanel();
   private readonly promotionModal: HTMLDivElement;
 
-  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void, onResetCamera?: () => void) {
+  constructor(container: HTMLElement, bgmPlayer: YoutubeBgmPlayer, onExitToMenu: () => void, onSaveGame: () => void, onResetCamera?: () => void) {
     this.root = document.createElement('div');
     this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
     this.root.appendChild(this.turnIndicator.el);
@@ -52,6 +52,13 @@ export class HUD {
     });
     topLeftRow.appendChild(bgmBtn);
 
+    const nextBgmBtn = document.createElement('button');
+    nextBgmBtn.textContent = '다음 곡 ▶';
+    nextBgmBtn.title = 'BGM 다음 곡 재생';
+    nextBgmBtn.style.cssText = cornerBtnStyle;
+    nextBgmBtn.addEventListener('click', () => void bgmPlayer.playNext());
+    topLeftRow.appendChild(nextBgmBtn);
+
     // 사용자 요청 §시점 초기화 버튼 — 상단 BGM 버튼 오른쪽에 배치
     const resetCamBtn = document.createElement('button');
     resetCamBtn.textContent = '시점 초기화';
@@ -70,6 +77,12 @@ export class HUD {
     });
     topLeftRow.appendChild(exitBtn);
 
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '게임 저장';
+    saveBtn.style.cssText = cornerBtnStyle;
+    saveBtn.addEventListener('click', onSaveGame);
+    topLeftRow.appendChild(saveBtn);
+
     this.promotionModal = document.createElement('div');
     this.promotionModal.style.cssText = [
       'position:absolute',
@@ -87,6 +100,14 @@ export class HUD {
 
   setTurnText(text: string): void {
     this.turnIndicator.setText(text);
+  }
+
+  setDrawTurnsRemaining(turns: number): void {
+    this.turnIndicator.setDrawTurnsRemaining(turns);
+  }
+
+  setElapsedSeconds(seconds: number): void {
+    this.turnIndicator.setElapsedSeconds(seconds);
   }
 
   pushMove(san: string, color: Color): void {

@@ -1,5 +1,5 @@
 import type { LocalGameRecord } from '../game/MatchState';
-import { DB_NAME, DB_VERSION, type LocalMatchRecord, type SyncOp } from './schema';
+import { DB_NAME, DB_VERSION, type LocalMatchRecord, type SavedGameRecord, type SyncOp } from './schema';
 
 /** D10-3 §IndexedDB 스키마 — matches/games/syncQueue/meta 4개 오브젝트 스토어. */
 export class IndexedDbStore {
@@ -29,6 +29,10 @@ export class IndexedDbStore {
           syncQueue.createIndex('by_state', 'state');
         }
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('savedGames')) {
+          const savedGames = db.createObjectStore('savedGames', { keyPath: 'saveId' });
+          savedGames.createIndex('by_player_savedAt', ['playerId', 'savedAt']);
+        }
       };
       req.onsuccess = () => {
         this.db = req.result;
@@ -86,6 +90,39 @@ export class IndexedDbStore {
         const games = (gamesReq.result as LocalGameRecord[]).slice().sort((a, b) => a.gameIndex - b.gameIndex);
         resolve({ match, games });
       };
+      tx.onerror = () => reject(tx.error as Error);
+    });
+  }
+
+  putSavedGame(savedGame: SavedGameRecord): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tx = this.requireDb().transaction('savedGames', 'readwrite');
+      tx.objectStore('savedGames').put(savedGame);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error as Error);
+    });
+  }
+
+  listSavedGames(playerId: string): Promise<SavedGameRecord[]> {
+    return new Promise((resolve, reject) => {
+      const results: SavedGameRecord[] = [];
+      const index = this.requireDb().transaction('savedGames', 'readonly').objectStore('savedGames').index('by_player_savedAt');
+      const req = index.openCursor(IDBKeyRange.bound([playerId, 0], [playerId, Number.MAX_SAFE_INTEGER]), 'prev');
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor === null) return resolve(results);
+        results.push(cursor.value as SavedGameRecord);
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error as Error);
+    });
+  }
+
+  deleteSavedGame(saveId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tx = this.requireDb().transaction('savedGames', 'readwrite');
+      tx.objectStore('savedGames').delete(saveId);
+      tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error as Error);
     });
   }
@@ -186,10 +223,11 @@ export class IndexedDbStore {
 
   clearAll(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const tx = this.requireDb().transaction(['matches', 'games', 'syncQueue'], 'readwrite');
+      const tx = this.requireDb().transaction(['matches', 'games', 'syncQueue', 'savedGames'], 'readwrite');
       tx.objectStore('matches').clear();
       tx.objectStore('games').clear();
       tx.objectStore('syncQueue').clear();
+      tx.objectStore('savedGames').clear();
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error as Error);
     });
