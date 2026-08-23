@@ -43,13 +43,14 @@ export class TurnIndicator {
         'left:auto',
         'transform:none',
         'width:100%',
+        'max-width:620px',
         'min-height:48px',
         'padding:7px 10px',
         'box-sizing:border-box',
         'border-radius:8px',
         'background:rgba(26,20,13,0.86)',
         'color:#F2E8D5',
-        'font:600 14px/1.25 system-ui,sans-serif',
+        'font:600 clamp(13px,1.4vw,15px)/1.25 system-ui,sans-serif',
         'display:grid',
         'grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.25fr)',
         'align-items:center',
@@ -60,8 +61,8 @@ export class TurnIndicator {
         'user-select:none',
       ].join(';');
       this.turnText.style.cssText = 'min-width:0;white-space:normal;overflow-wrap:anywhere;';
-      this.drawCounter.style.cssText = 'min-width:0;padding:0 5px;border-left:1px solid rgba(242,232,213,.3);font-size:11px;font-weight:500;color:#F0CE6A;white-space:normal;';
-      this.elapsedTime.style.cssText = 'min-width:0;padding-left:5px;border-left:1px solid rgba(242,232,213,.3);font-size:11px;font-weight:500;color:#C8CDD3;white-space:normal;';
+      this.drawCounter.style.cssText = 'min-width:0;padding:0 5px;border-left:1px solid rgba(242,232,213,.3);font-size:clamp(11px,1.15vw,13px);font-weight:500;color:#F0CE6A;white-space:normal;';
+      this.elapsedTime.style.cssText = 'min-width:0;padding-left:5px;border-left:1px solid rgba(242,232,213,.3);font-size:clamp(11px,1.15vw,13px);font-weight:500;color:#C8CDD3;white-space:normal;';
       return;
     }
 

@@ -3,7 +3,6 @@ interface YTPlayerInstance {
   playVideo(): void;
   pauseVideo(): void;
   loadVideoById(videoId: string): void;
-  cueVideoById(videoId: string): void;
   destroy(): void;
 }
 
@@ -75,6 +74,7 @@ export class YoutubeBgmPlayer {
   private playing = false;
   private trackIndex = 0;
   private playlist: string[] = [...PLAYLIST_VIDEO_IDS];
+  private shuffledTrackNeedsLoad = false;
   private readonly listeners = new Set<(playing: boolean) => void>();
 
   constructor(container: HTMLElement) {
@@ -129,13 +129,12 @@ export class YoutubeBgmPlayer {
 
     this.playlist = shuffled;
     this.trackIndex = 0;
+    this.shuffledTrackNeedsLoad = true;
     if (this.player === null) return;
-    const firstTrack = this.trackIdAt(0);
     if (this.playing) {
-      this.player.loadVideoById(firstTrack);
+      this.player.loadVideoById(this.trackIdAt(0));
       this.player.playVideo();
-    } else {
-      this.player.cueVideoById(firstTrack);
+      this.shuffledTrackNeedsLoad = false;
     }
   }
 
@@ -178,14 +177,26 @@ export class YoutubeBgmPlayer {
     // Promise라도) 마이크로태스크 한 틱이 끼어드는데, iOS Safari는 그 정도로도 "사용자 제스처 체인이
     // 끊겼다"고 판단해 재생을 거부하는 경우가 있다.
     if (this.player !== null) {
-      this.player.playVideo();
+      if (this.shuffledTrackNeedsLoad) {
+        // loadVideoById는 선택한 곡을 로드하면서 즉시 재생한다. 셔플 직후 cueVideoById→playVideo를
+        // 연달아 호출하면 모바일 YouTube 플레이어가 아직 큐잉 중이라 첫 재생 명령을 무시할 수 있다.
+        this.player.loadVideoById(this.trackIdAt(this.trackIndex));
+        this.shuffledTrackNeedsLoad = false;
+      } else {
+        this.player.playVideo();
+      }
       this.playing = true;
       this.notify();
       return;
     }
     const player = await this.ensurePlayer();
     if (this.playing) return;
-    player.playVideo();
+    if (this.shuffledTrackNeedsLoad) {
+      player.loadVideoById(this.trackIdAt(this.trackIndex));
+      this.shuffledTrackNeedsLoad = false;
+    } else {
+      player.playVideo();
+    }
     this.playing = true;
     this.notify();
   }
@@ -198,7 +209,12 @@ export class YoutubeBgmPlayer {
         this.player.pauseVideo();
         this.playing = false;
       } else {
-        this.player.playVideo();
+        if (this.shuffledTrackNeedsLoad) {
+          this.player.loadVideoById(this.trackIdAt(this.trackIndex));
+          this.shuffledTrackNeedsLoad = false;
+        } else {
+          this.player.playVideo();
+        }
         this.playing = true;
       }
       this.notify();
@@ -209,7 +225,12 @@ export class YoutubeBgmPlayer {
       player.pauseVideo();
       this.playing = false;
     } else {
-      player.playVideo();
+      if (this.shuffledTrackNeedsLoad) {
+        player.loadVideoById(this.trackIdAt(this.trackIndex));
+        this.shuffledTrackNeedsLoad = false;
+      } else {
+        player.playVideo();
+      }
       this.playing = true;
     }
     this.notify();

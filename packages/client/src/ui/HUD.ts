@@ -117,16 +117,17 @@ export class HUD {
         'right:8px',
         'display:flex',
         'flex-direction:column',
+        'align-items:center',
         'gap:6px',
         'z-index:20',
         'pointer-events:none',
       ].join(';');
-      this.topLeftRow.style.cssText = 'position:relative;top:auto;left:auto;width:100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;pointer-events:none;';
+      this.topLeftRow.style.cssText = 'position:relative;top:auto;left:auto;width:min(760px,100%);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;pointer-events:none;';
       this.topLeftRow.querySelectorAll('button').forEach((button) => {
         button.style.minWidth = '0';
         button.style.minHeight = '46px';
         button.style.padding = '4px 2px';
-        button.style.fontSize = '11px';
+        button.style.fontSize = 'clamp(11px,1.2vw,13px)';
         button.style.lineHeight = '1.15';
         button.style.whiteSpace = 'normal';
       });
