@@ -335,7 +335,10 @@ function startMatch(config: MatchConfig, savedGame?: SavedGameRecord): void {
   });
 
   const generation = localMatchGeneration;
-  matchController.bus.on('match:gameStarted', ({ session }) => bindSessionEvents(session, config, generation));
+  matchController.bus.on('match:gameStarted', ({ session }) => {
+    bgmPlayer.shufflePlaylistForNewGame();
+    bindSessionEvents(session, config, generation);
+  });
   matchController.bus.on('match:gameEnded', ({ gameIndex, result, scoreMine, scoreOpponent }) => {
     const controller = matchController;
     if (controller === null) return;
@@ -375,7 +378,7 @@ function startMatch(config: MatchConfig, savedGame?: SavedGameRecord): void {
       outcome,
       scoreMine,
       scoreOpponent,
-      () => startMatch(config),
+      () => void handleStartFromMenu(config),
       () => {
         matchController = null;
         mainMenu.show();
@@ -707,6 +710,7 @@ function startOnlineMatch(config: MatchConfig): void {
 
 async function handleStartFromMenu(config: MatchConfig): Promise<void> {
   soundRegistry.play('sfx.ui.game_start'); // 사용자 요청 §게임 시작 사운드
+  bgmPlayer.shufflePlaylistForNewGame();
   void bgmPlayer.play(); // 게임 화면 진입 시 BGM 기본 자동재생(메인 메뉴에서는 재생하지 않음) — "시작" 클릭이 사용자 제스처 기준점.
   await sculptedUnitsReady; // 대개 메인 메뉴 도달 전에 이미 끝나 있어 즉시 반환된다.
   if (config.source === 'online') startOnlineMatch(config);

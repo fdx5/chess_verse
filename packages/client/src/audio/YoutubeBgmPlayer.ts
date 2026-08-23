@@ -3,6 +3,7 @@ interface YTPlayerInstance {
   playVideo(): void;
   pauseVideo(): void;
   loadVideoById(videoId: string): void;
+  cueVideoById(videoId: string): void;
   destroy(): void;
 }
 
@@ -30,11 +31,16 @@ declare global {
   }
 }
 
-const PLAYLIST_VIDEO_IDS = ['Kib-dS_R2Uo', '4YMpGYZgmWQ', '0ZPPQCjq92Y', '5Gnd5baAv2c'] as const;
-
-function trackIdAt(index: number): string {
-  return PLAYLIST_VIDEO_IDS[index % PLAYLIST_VIDEO_IDS.length] ?? PLAYLIST_VIDEO_IDS[0];
-}
+const PLAYLIST_VIDEO_IDS = [
+  'Kib-dS_R2Uo',
+  '4YMpGYZgmWQ',
+  '0ZPPQCjq92Y',
+  '5Gnd5baAv2c',
+  'x2OjPp4h0go',
+  '6hGAQdKHrtM',
+  '696dpaprIGo',
+  'o2Mg4ZJllT0',
+] as const;
 
 let apiLoadPromise: Promise<YTNamespace> | null = null;
 
@@ -58,7 +64,7 @@ function loadYoutubeIframeApi(): Promise<YTNamespace> {
 }
 
 /**
- * 시작화면/인게임 공용 BGM — 사용자가 지정한 유튜브 2곡을 순서대로 무한 반복 재생한다.
+ * 시작화면/인게임 공용 BGM — 사용자가 지정한 유튜브 8곡을 게임마다 섞어 무한 반복 재생한다.
  * 공식 IFrame Player API로 임베드해 재생만 하며(다운로드/추출 없음), 자동재생은 하지 않고
  * 반드시 버튼 클릭(사용자 제스처)에서만 시작한다.
  */
@@ -68,6 +74,7 @@ export class YoutubeBgmPlayer {
   private playerReady: Promise<YTPlayerInstance> | null = null;
   private playing = false;
   private trackIndex = 0;
+  private playlist: string[] = [...PLAYLIST_VIDEO_IDS];
   private readonly listeners = new Set<(playing: boolean) => void>();
 
   constructor(container: HTMLElement) {
@@ -105,6 +112,33 @@ export class YoutubeBgmPlayer {
     for (const listener of this.listeners) listener(this.playing);
   }
 
+  private trackIdAt(index: number): string {
+    return this.playlist[index % this.playlist.length] ?? PLAYLIST_VIDEO_IDS[0];
+  }
+
+  /** 새 게임마다 8곡의 순서를 다시 섞고 첫 곡부터 시작한다. */
+  shufflePlaylistForNewGame(): void {
+    const previous = this.playlist.join(',');
+    const shuffled = [...PLAYLIST_VIDEO_IDS];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex]!, shuffled[index]!];
+    }
+    // 극히 드물게 이전과 완전히 같은 순열이면 실제 변화가 생기도록 한 칸 회전한다.
+    if (shuffled.join(',') === previous) shuffled.push(shuffled.shift()!);
+
+    this.playlist = shuffled;
+    this.trackIndex = 0;
+    if (this.player === null) return;
+    const firstTrack = this.trackIdAt(0);
+    if (this.playing) {
+      this.player.loadVideoById(firstTrack);
+      this.player.playVideo();
+    } else {
+      this.player.cueVideoById(firstTrack);
+    }
+  }
+
   private async ensurePlayer(): Promise<YTPlayerInstance> {
     if (this.player !== null) return this.player;
     this.playerReady ??= loadYoutubeIframeApi().then(
@@ -113,7 +147,7 @@ export class YoutubeBgmPlayer {
           const player = new YTApi.Player(this.mountEl.id, {
             height: '90',
             width: '160',
-            videoId: trackIdAt(this.trackIndex),
+            videoId: this.trackIdAt(this.trackIndex),
             // playsinline — iOS 버그 수정: 이게 없으면 iOS Safari가 재생을 전체화면으로 강제 전환하려
             // 하거나 인라인(백그라운드) 오디오 재생 자체를 거부한다.
             playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1 },
@@ -125,7 +159,7 @@ export class YoutubeBgmPlayer {
               onStateChange: (ev) => {
                 if (ev.data !== YT_STATE_ENDED) return;
                 this.trackIndex += 1;
-                player.loadVideoById(trackIdAt(this.trackIndex));
+                player.loadVideoById(this.trackIdAt(this.trackIndex));
                 player.playVideo();
               },
             },
@@ -184,7 +218,7 @@ export class YoutubeBgmPlayer {
   /** 현재 곡을 건너뛰고 재생목록의 다음 곡을 즉시 재생한다. */
   async playNext(): Promise<void> {
     this.trackIndex += 1;
-    const videoId = trackIdAt(this.trackIndex);
+    const videoId = this.trackIdAt(this.trackIndex);
     if (this.player !== null) {
       this.player.loadVideoById(videoId);
       this.player.playVideo();
