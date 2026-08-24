@@ -206,7 +206,7 @@ export function getUnitPalette(type: PieceType, color: Color, materialCache: Mat
   ) as THREE.MeshPhysicalMaterial;
 
   const primaryColors: Record<PieceType, string> = isWhite
-    ? { p: '#DDF0E6', n: '#DCE8F6', b: '#EADFF5', r: '#FAF6EE', q: '#F7E0E7', k: '#E3E7FA' }
+    ? { p: '#B8D8C8', n: '#DCE8F6', b: '#EADFF5', r: '#FAF6EE', q: '#F7E0E7', k: '#E3E7FA' }
     : { p: '#4A566A', n: '#123A73', b: '#07594F', r: '#151820', q: '#7A1025', k: '#3B176B' };
 
   const accentColors: Record<PieceType, string> = isWhite

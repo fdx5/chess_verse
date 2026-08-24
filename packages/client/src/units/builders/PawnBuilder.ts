@@ -19,8 +19,10 @@ export function buildPawn(color: Color, _quality: QualityTier, geometryCache: Ge
   const hips = makeBone('hips', [0, legLen, 0]);
   root.add(hips);
 
-  const thighL = buildLeg('L', [-0.06, legLen, 0], 0.16, 0.045, 0.16, 0.045, palette.subtle, geometryCache, 'pawn');
-  const thighR = buildLeg('R', [0.06, legLen, 0], 0.16, 0.045, 0.16, 0.045, palette.subtle, geometryCache, 'pawn');
+  // Keep both legs, ankles and feet on the same jade body material. Using the
+  // pale secondary material here made the lower legs look detached on white pawns.
+  const thighL = buildLeg('L', [-0.06, legLen, 0], 0.16, 0.045, 0.16, 0.045, palette.primary, geometryCache, 'pawn');
+  const thighR = buildLeg('R', [0.06, legLen, 0], 0.16, 0.045, 0.16, 0.045, palette.primary, geometryCache, 'pawn');
   root.add(thighL.upper, thighR.upper);
 
   // 하체 의상 (파스텔 민트 / 딥 차콜)

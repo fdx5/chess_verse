@@ -130,7 +130,10 @@ export class UnitBoard {
     instance.root.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.castShadow = true;
-        obj.receiveShadow = true;
+        // Pawn feet sit directly under a dense single-piece skinned mesh, which
+        // caused strong self-shadow patches on the ankles and feet. Pawns still
+        // cast onto the board; they simply do not receive their own shadow map.
+        obj.receiveShadow = type !== 'p';
       }
     });
     this.scene.add(instance.root);

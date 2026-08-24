@@ -61,7 +61,7 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
   w: {
     // 폰 (Pawn): 부드럽고 화사한 파스텔 세이지 민트 (Sage Mint) & 웜 샌드 베이지
     p: {
-      primary: '#DDF0E6',
+      primary: '#B8D8C8',
       accent: '#E8D08D',
       pedestal: '#FAF4E8',
       metalness: 0.15,
@@ -218,11 +218,25 @@ function applyFactionTint(root: THREE.Object3D, color: Color, _materialCache: Ma
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
     const source = Array.isArray(obj.material) ? obj.material[0] : obj.material;
-    const map = source instanceof THREE.MeshStandardMaterial ? source.map : null;
+    const isPedestal = obj.name === 'pedestal' || obj.name.toLowerCase().includes('pedestal');
+    // The pawn's baked grayscale map contains an inconsistent dark patch from
+    // the right ankle through the foot. The asset also groups part of that foot
+    // with the pedestal, so use one uniform body material for every pawn mesh.
+    const map = type === 'p'
+      ? null
+      : source instanceof THREE.MeshStandardMaterial ? source.map : null;
+
+    // The pawn asset also has uneven imported vertex normals around the right
+    // ankle and both feet. Rebuild only its character normals so direct light
+    // produces the same smooth response as the torso.
+    if (type === 'p' && !isPedestal) {
+      obj.geometry = obj.geometry.clone();
+      obj.geometry.computeVertexNormals();
+      obj.geometry.normalizeNormals();
+    }
 
     const accentColorHex = obj.userData['accentColor'] as string | undefined;
     const accentMetal = obj.userData['accentMetal'] === true;
-    const isPedestal = obj.name === 'pedestal' || obj.name.toLowerCase().includes('pedestal');
     
     // 사용자 요청 §기사 가슴 절반 분할 색상 문제 해결:
     // knight.glb의 chestAccent 노드는 가슴 우측(+x)에 편향되어 있어 단독 악센트로 칠해지면 가슴이 반쪽만 황금색으로 갈라져 보인다.
@@ -237,7 +251,7 @@ function applyFactionTint(root: THREE.Object3D, color: Color, _materialCache: Ma
     let targetEmissive = new THREE.Color(theme.emissive);
     let targetEmissiveIntensity = theme.emissiveIntensity;
 
-    if (isPedestal) {
+    if (isPedestal && type !== 'p') {
       // 발판: 기물 본체와 뚜렷하게 구분되는 베이스 톤 (본체의 이목구비/실루엣을 부각)
       targetColor = theme.pedestal;
       targetMetalness = 0.1;

@@ -49,12 +49,18 @@ const BISHOP_STRIKE_SEC = 0.12;
 const ROOK_WINDUP_SEC = 0.25;
 const ROOK_STRIKE_SEC = 0.16;
 const ROOK_SHATTER_RELAX_SEC = 0.4;
-const QUEEN_WINDUP_SEC = 0.16;
-const QUEEN_STRIKE_SEC = 0.14;
-const QUEEN_SHATTER_RELAX_SEC = 0.4;
-const KING_WINDUP_SEC = 0.18;
-const KING_STRIKE_SEC = 0.14;
-const KING_SHATTER_RELAX_SEC = 0.4;
+// Queen/King finishers combine skeletal posing, projectiles and shatter meshes.
+// Give those beats enough screen time to remain readable on 30–60 fps devices.
+const QUEEN_WINDUP_SEC = 0.28;
+const QUEEN_STRIKE_SEC = 0.22;
+const QUEEN_SHATTER_RELAX_SEC = 0.55;
+const KING_WINDUP_SEC = 0.3;
+const KING_STRIKE_SEC = 0.22;
+const KING_SHATTER_RELAX_SEC = 0.55;
+const ROYAL_SHARD_COUNT = 4;
+const KING_BOLT_INTERVAL_SEC = 0.18;
+// Do not let a transient rendering hitch skip an entire cinematic beat.
+const MAX_CINEMATIC_STEP_SEC = 1 / 20;
 
 // 사용자 요청 §게임 내 사운드 — 공격자 타입별 전투 연출 효과음(mp3 샘플, `SoundRegistry` 참조).
 const FINISHER_SFX_CUE: Record<PieceType, string> = {
@@ -257,7 +263,7 @@ export class CombatDirector {
       return;
     }
 
-    active.elapsed += dtSeconds;
+    active.elapsed += Math.min(Math.max(dtSeconds, 0), MAX_CINEMATIC_STEP_SEC);
 
     // Short 페이싱은 totalDuration을 절반으로 줄이므로, 피니셔의 절대 초 상수도 같은 비율로
     // 축소해야 scene이 정의한 death/result 비트 안에 들어맞는다.
@@ -655,6 +661,7 @@ export class CombatDirector {
       const bodyOrigin = defenderUnit.root.position.clone();
       active.shatterFragments.push(...this.createUnitShards(defenderUnit, bodyOrigin, 8));
       this.spawnDustCloud(new THREE.Vector3(bodyOrigin.x, 0.18, bodyOrigin.z), '#8D8172', 42, 0.95);
+      this.spawnBloodEffect(new THREE.Vector3(bodyOrigin.x, 0.38, bodyOrigin.z), active.toppleAxis);
     }
 
     const shatterT = finisherT - strikeEnd;
@@ -715,9 +722,10 @@ export class CombatDirector {
     if (active.shatterFragments.length === 0) {
       defenderUnit.mixer.stopAllAction();
       const origin = defenderUnit.root.position.clone();
-      active.shatterFragments.push(...this.createUnitShards(defenderUnit, origin, 8));
+      active.shatterFragments.push(...this.createUnitShards(defenderUnit, origin, ROYAL_SHARD_COUNT));
       this.spawnArcaneBurst(new THREE.Vector3(origin.x, 0.48, origin.z), '#D9A6FF');
       this.spawnDustCloud(new THREE.Vector3(origin.x, 0.22, origin.z), '#A76BC4', 30, 0.68);
+      this.spawnBloodEffect(new THREE.Vector3(origin.x, 0.4, origin.z), active.toppleAxis);
     }
 
     const shatterT = finisherT - strikeEnd;
@@ -768,7 +776,7 @@ export class CombatDirector {
 
     if (defenderUnit === undefined || finisherT <= strikeEnd) return;
 
-    const desiredBolts = Math.min(4, Math.floor((finisherT - strikeEnd) / (0.14 * pacingScale)) + 1);
+    const desiredBolts = Math.min(4, Math.floor((finisherT - strikeEnd) / (KING_BOLT_INTERVAL_SEC * pacingScale)) + 1);
     while (active.kingBoltCount < desiredBolts) {
       const [defX, defZ] = active.defenderWorld;
       const offset = active.kingBoltCount % 2 === 0 ? -0.08 : 0.08;
@@ -782,7 +790,7 @@ export class CombatDirector {
       defenderUnit.mixer.stopAllAction();
       // 머리를 뗀 뒤(=이제 헤드리스인) 몸통을 두 번 복제 — 지오메트리/재질은 캐시 공유라 저비용.
       const bodyOrigin = defenderUnit.root.position.clone();
-      active.shatterFragments.push(...this.createUnitShards(defenderUnit, bodyOrigin, 8));
+      active.shatterFragments.push(...this.createUnitShards(defenderUnit, bodyOrigin, ROYAL_SHARD_COUNT));
       const bodyAngles: readonly number[] = [(-2 * Math.PI) / 3, (2 * Math.PI) / 3];
       const bodyRotSpeeds: readonly (readonly [number, number])[] = [
         [-5, 4],
@@ -808,9 +816,10 @@ export class CombatDirector {
       }
       this.spawnArcaneBurst(new THREE.Vector3(bodyOrigin.x, 0.5, bodyOrigin.z), '#68FF78');
       this.spawnDustCloud(new THREE.Vector3(bodyOrigin.x, 0.2, bodyOrigin.z), '#42634A', 36, 0.82);
+      this.spawnBloodEffect(new THREE.Vector3(bodyOrigin.x, 0.42, bodyOrigin.z), active.toppleAxis);
     }
 
-    const shatterT = Math.max(0, finisherT - strikeEnd - 0.42 * pacingScale);
+    const shatterT = Math.max(0, finisherT - strikeEnd - KING_BOLT_INTERVAL_SEC * 3 * pacingScale);
     this.updateShatterFragments(active.shatterFragments, shatterT, 1.2, 2.8);
 
     // 원본 유닛(하체 이하 마지막 네 번째 조각) — 나머지 세 조각과 다른 방향으로.
@@ -1000,10 +1009,10 @@ export class CombatDirector {
     const material = new THREE.PointsMaterial({ color: '#780710', map: dropTexture, alphaTest: 0.04, size: 0.045, transparent: true, opacity: 0.92, depthWrite: false });
     const drops = new THREE.Points(geometry, material);
     const bloodMat = new THREE.MeshPhysicalMaterial({ color: '#420006', roughness: 0.3, metalness: 0, clearcoat: 0.75, clearcoatRoughness: 0.18, transparent: true, opacity: 0.94, depthWrite: false });
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(0.22, 32), bloodMat);
+    const pool = new THREE.Mesh(new THREE.CircleGeometry(0.32, 40), bloodMat);
     pool.rotation.x = -Math.PI / 2;
     pool.position.set(origin.x + direction.x * 0.12, 0.012, origin.z + direction.z * 0.12);
-    pool.scale.set(0.05, 0.03, 0.05);
+    pool.scale.set(0.06, 0.04, 1);
     this.scene.add(drops, pool);
     const start = performance.now();
     const tick = (): void => {
@@ -1014,8 +1023,12 @@ export class CombatDirector {
         attr.setXYZ(i, origin.x + v.x * elapsed, Math.max(0.025, origin.y + v.y * elapsed - 1.8 * elapsed * elapsed), origin.z + v.z * elapsed);
       }
       attr.needsUpdate = true;
-      const poolT = easeOutQuad(clamp01((elapsed - 0.18) / 0.7));
-      pool.scale.set(0.85 + poolT * 0.35, 0.55 + poolT * 0.22, 1);
+      const poolT = easeOutQuad(clamp01((elapsed - 0.12) / 0.9));
+      pool.scale.set(
+        THREE.MathUtils.lerp(0.06, 1.25, poolT),
+        THREE.MathUtils.lerp(0.04, 0.82, poolT),
+        1
+      );
       material.opacity = elapsed < 2 ? 0.9 : 0.9 * (1 - clamp01((elapsed - 2) / AFTERMATH_FADE_SEC));
       bloodMat.opacity = elapsed < 2 ? 0.94 : 0.94 * (1 - clamp01((elapsed - 2) / AFTERMATH_FADE_SEC));
       if (elapsed < 2 + AFTERMATH_FADE_SEC) requestAnimationFrame(tick);
