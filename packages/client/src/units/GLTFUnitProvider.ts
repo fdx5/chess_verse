@@ -61,7 +61,7 @@ const UNIT_VISUAL_THEMES: Record<Color, Record<PieceType, UnitVisualTheme>> = {
   w: {
     // 폰 (Pawn): 부드럽고 화사한 파스텔 세이지 민트 (Sage Mint) & 웜 샌드 베이지
     p: {
-      primary: '#B8D8C8',
+      primary: '#9FCFB5',
       accent: '#E8D08D',
       pedestal: '#FAF4E8',
       metalness: 0.15,
