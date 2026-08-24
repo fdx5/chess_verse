@@ -19,6 +19,6 @@ jobs:
     steps:
       - name: Ping deployed service
         run: |
-          curl -fsS --max-time 25 https://3dchess.onrender.com/ \
+          curl -fsS --max-time 25 https://threedchess-mpjo.onrender.com/ \
             && echo "OK — service responded" \
             || echo "ping failed (cold start in progress, or service down) — not treated as a workflow failure"
