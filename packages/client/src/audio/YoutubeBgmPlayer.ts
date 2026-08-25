@@ -23,6 +23,8 @@ interface YTNamespace {
 }
 
 const YT_STATE_ENDED = 0;
+const YT_STATE_PLAYING = 1;
+const YT_STATE_PAUSED = 2;
 
 declare global {
   interface Window {
@@ -78,6 +80,7 @@ export class YoutubeBgmPlayer {
   private shuffledTrackNeedsLoad = false;
   private readonly listeners = new Set<(playing: boolean) => void>();
   private advancing = false;
+  private actualPlaying = false;
 
   constructor(container: HTMLElement) {
     // iOS 버그 수정 — 뷰포트 밖(-9999px)으로 완전히 밀어내면 iOS Safari/WebKit이 "화면 밖 = 백그라운드"로
@@ -90,6 +93,16 @@ export class YoutubeBgmPlayer {
     this.mountEl.id = `bcr-bgm-player-${Math.random().toString(36).slice(2, 8)}`;
     wrapper.appendChild(this.mountEl);
     container.appendChild(wrapper);
+
+    // iOS/WebKit은 비동기로 준비된 iframe에 대한 최초 playVideo()를 사용자 제스처가
+    // 끝난 뒤 호출하면 거부한다. 요청 상태와 실제 재생 상태를 따로 기억해 두고,
+    // 재생 요청이 아직 반영되지 않았다면 이후의 모든 사용자 제스처에서 동기적으로
+    // 다시 시도한다. 게임 시작 버튼의 click이 버블링되는 시점도 여기에 포함된다.
+    const retryPendingPlayback = (): void => {
+      if (this.playing && !this.actualPlaying && this.player !== null) this.player.playVideo();
+    };
+    container.addEventListener('click', retryPendingPlayback);
+    container.addEventListener('touchend', retryPendingPlayback, { passive: true });
 
     // iOS 버그 수정 — 유튜브 IFrame API 로드+플레이어 생성은 스크립트 네트워크 왕복을 포함해 수백ms~수초
     // 걸릴 수 있는데, 그 시간 동안 사용자 제스처(클릭) 컨텍스트가 끊겨 iOS Safari가 재생을 거부한다.
@@ -170,8 +183,18 @@ export class YoutubeBgmPlayer {
                 resolve(player);
               },
               onStateChange: (ev) => {
-                if (ev.data !== YT_STATE_ENDED) return;
-                this.advanceToNextTrack(player);
+                if (ev.data === YT_STATE_PLAYING) {
+                  this.actualPlaying = true;
+                  return;
+                }
+                if (ev.data === YT_STATE_PAUSED) {
+                  this.actualPlaying = false;
+                  return;
+                }
+                if (ev.data === YT_STATE_ENDED) {
+                  this.actualPlaying = false;
+                  this.advanceToNextTrack(player);
+                }
               },
               // 비공개/지역 제한 영상이 섞여 있어도 다음 곡으로 자동 복구한다.
               onError: () => this.advanceToNextTrack(player),
@@ -186,6 +209,10 @@ export class YoutubeBgmPlayer {
    * 반드시 사용자 클릭(예: 시작 버튼)에서 이어지는 호출 체인 안에서만 호출한다(자동재생 정책 대응). */
   async play(): Promise<void> {
     if (this.playing) return;
+    // await 이전에 의도 상태를 기록해야, iOS에서 플레이어 준비가 늦더라도 다음
+    // 사용자 제스처가 재생을 복구할 수 있다.
+    this.playing = true;
+    this.notify();
     // iOS 버그 수정 — 플레이어가 이미 준비돼 있으면(생성자에서 미리 로드해둔 덕분에 대부분 이 경우다)
     // await 없이 즉시 동기적으로 playVideo()를 호출한다. await를 한 번이라도 거치면(이미 resolve된
     // Promise라도) 마이크로태스크 한 틱이 끼어드는데, iOS Safari는 그 정도로도 "사용자 제스처 체인이
@@ -199,8 +226,6 @@ export class YoutubeBgmPlayer {
       } else {
         this.player.playVideo();
       }
-      this.playing = true;
-      this.notify();
       return;
     }
     const player = await this.ensurePlayer();
@@ -211,8 +236,6 @@ export class YoutubeBgmPlayer {
     } else {
       player.playVideo();
     }
-    this.playing = true;
-    this.notify();
   }
 
   /** 반드시 버튼 클릭 핸들러 안에서만 호출한다(브라우저 자동재생 정책 대응). */
@@ -222,6 +245,7 @@ export class YoutubeBgmPlayer {
       if (this.playing) {
         this.player.pauseVideo();
         this.playing = false;
+        this.actualPlaying = false;
       } else {
         if (this.shuffledTrackNeedsLoad) {
           this.player.loadVideoById(this.trackIdAt(this.trackIndex));
@@ -238,6 +262,7 @@ export class YoutubeBgmPlayer {
     if (this.playing) {
       player.pauseVideo();
       this.playing = false;
+      this.actualPlaying = false;
     } else {
       if (this.shuffledTrackNeedsLoad) {
         player.loadVideoById(this.trackIdAt(this.trackIndex));
