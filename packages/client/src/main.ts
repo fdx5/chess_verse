@@ -237,10 +237,24 @@ function handleBoardClick(session: GameSession, square: Square | null, beforeAtt
   if (isLegalTarget) {
     beforeAttempt?.();
     session.attemptMove({ from: selected, to: square });
-  } else if (piece !== null && piece !== undefined && piece.color === position.turn) {
-    session.select(square);
   } else {
-    session.select(null);
+    // 캐슬링 UX: 표준 방식(왕을 c/g 파일로 두 칸 이동)뿐 아니라
+    // 왕을 선택한 뒤 해당 룩을 누르는 직관적인 입력도 허용한다.
+    const castleViaRook = legal.find((move) => {
+      if ((move.flags & (MoveFlag.CASTLE_K | MoveFlag.CASTLE_Q)) === 0) return false;
+      const rookSquare = squareOf((move.flags & MoveFlag.CASTLE_K) !== 0 ? 7 : 0, rankOf(move.from));
+      return square === rookSquare;
+    });
+    if (castleViaRook !== undefined) {
+      beforeAttempt?.();
+      session.attemptMove({ from: castleViaRook.from, to: castleViaRook.to });
+      return;
+    }
+    if (piece !== null && piece !== undefined && piece.color === position.turn) {
+      session.select(square);
+    } else {
+      session.select(null);
+    }
   }
 }
 
