@@ -1,6 +1,7 @@
 import type { Difficulty } from '../ai/AiWorkerHandle';
 import type { MatchConfig } from '../game/MatchState';
 import type { YoutubeBgmPlayer } from '../audio/YoutubeBgmPlayer';
+import { publicAssetUrl } from '../assets/publicAssetUrl';
 
 const DIFFICULTIES: readonly { value: Difficulty; label: string; icon: string }[] = [
   { value: 'beginner', label: '초급', icon: '🌱' },
@@ -13,6 +14,13 @@ const GOLD = '#D4AF37';
 const GOLD_BRIGHT = '#F0CE6A';
 const PARCHMENT = '#F2E8D5';
 const WOOD_BORDER = '#6B4A2F';
+
+/**
+ * 사용자 요청 §메인 메뉴 배경 — 밋밋한 단색 그라디언트 대신 실제 게임 애셋(조각 기물 + 금장 보드)을
+ * 시네마틱 앵글로 렌더링한 정지 이미지를 깐다. 이미지 위에는 어두운 방사형 그라디언트를 한 겹 덮어
+ * 중앙의 금장 카드와 본문 텍스트 대비를 유지한다(이미지 로드 전에는 `background-color`가 보인다).
+ */
+const MENU_BACKDROP_URL = publicAssetUrl('/menu-bg.jpg');
 
 /**
  * D7 §화면 흐름 — 스플래시/메인 메뉴. 사용자 요청으로 전면 리디자인
@@ -46,7 +54,13 @@ export class MainMenu {
       'display:flex',
       'align-items:center',
       'justify-content:center',
-      'background:radial-gradient(ellipse at 50% 20%, #4A3820 0%, #241B10 55%, #120D08 100%)',
+      'background-color:#120D08',
+      "background-image:radial-gradient(ellipse at 50% 46%, rgba(14,9,5,0.06) 0%, rgba(11,7,4,0.42) 44%, rgba(5,4,3,0.86) 100%),url('" +
+        MENU_BACKDROP_URL +
+        "')",
+      'background-size:cover,cover',
+      'background-position:center,center',
+      'background-repeat:no-repeat,no-repeat',
       'pointer-events:auto',
       'z-index:30',
       'padding:24px 16px',

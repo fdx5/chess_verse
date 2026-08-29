@@ -181,3 +181,12 @@
 - 설계: 없음(테스트 방법론 이슈, 코드 결함 아님).
 - 문제: 게스트 `playerId`/`nickname`을 `localStorage`(R6 예외 — 저마찰 플레이어 식별, R15)에 영구 보관하는데, 같은 브라우저의 두 탭은 `localStorage`를 공유하므로 완전히 동일한 `playerId`로 서버에 접속하게 된다. 서버(`packages/server/src/netServer.ts`)는 `connectionByPlayerId: Map<playerId, Connection>`으로 플레이어당 연결 1개만 추적하므로, 두 번째 탭의 `PLAYER_IDENTIFY`가 같은 키를 덮어써 첫 번째 탭의 연결 참조가 사라진다. 매칭이 성사돼도 `sendToPlayer(playerId, MATCH_FOUND)`는 플레이어 ID 기준으로만 보내므로, 두 번의 발송이 전부 마지막에 식별된(두 번째) 탭에게만 가고 첫 번째 탭은 알림을 영영 못 받는다.
 - 결정: 코드 수정 없음(의도된 설계 유지 — 실제 서비스에서는 서로 다른 사용자가 서로 다른 브라우저/기기를 쓰므로 이 충돌이 원천적으로 발생하지 않는다). 사용자에게 "한쪽은 일반 창, 한쪽은 시크릿/프라이빗 창(또는 다른 브라우저)으로 테스트"하도록 안내 — 저장소가 분리되어 서로 다른 `playerId`를 받는다.
+
+## [메인 메뉴 배경] 단색 그라디언트 → 실제 3D 애셋 렌더 정지 이미지
+- 설계: D7 §화면 흐름의 메인 메뉴 배경은 별도 규정이 없어, 리디자인 당시 `radial-gradient(#4A3820 → #120D08)` 단색 배경으로 구현되어 있었다.
+- 문제: 없음(사용자 명시 요청) — "메인 메뉴 뒷배경이 너무 심심하다, 체스 3D 기물을 스샷 찍어 배경 이미지를 만들어달라". 게임 안에서 쓰는 실제 조각 애셋(`public/models/*.glb`)과 금장 보드를 그대로 쓰되, 메뉴 카드가 놓이는 화면 중앙이 어두워야 텍스트 대비가 유지된다는 제약이 있다.
+- 결정: 런타임에 메뉴 뒤에서 Three.js 씬을 하나 더 돌리는 대신(모바일 저사양 티어의 프레임/배터리 예산을 건드리지 않기 위해) **정지 이미지 1장**(`public/menu-bg.jpg`, 1920×1080 JPEG 138KB)으로 굽고 CSS `background-image`로 깐다. 이미지 위에 어두운 방사형 그라디언트를 한 겹 더 덮어(중앙 α0.06 → 외곽 α0.86) 카드 가독성을 유지하고, 이미지 로드 전에는 `background-color:#120D08`이 그대로 보이도록 했다.
+- 생성 방법(재생성용): `packages/client/hero.html` + `src/tools/heroRender.ts`가 개발 전용 렌더러다. 저장소 루트에서 `npx vite`로 띄운 뒤 `/hero.html?<params>`로 접속하면 실제 `GLTFUnitProvider`/`UnitBoard`/`buildScene`을 그대로 재사용해 렌더한다(카메라·조명·안개·보드 밝기 전부 쿼리 파라미터). 현재 애셋을 만든 값은 아래와 같다.
+  `?w=1920&h=1080&env=none&cx=-7.4&cy=0.85&cz=4.4&tx=1.8&ty=1.0&tz=-1.0&fov=40&exposure=0.95&fog=0.09&boardDim=0.3&key=58&rim=1.3&bounce=10&dust=260`
+  `env=none`은 360도 실사 파노라마 대신 앰버 그라디언트 백드롭 + 미세 먼지 입자를 쓴다 — 기존 파노라마 4종은 모두 상점 간판·미술관 회화 같은 현대적 요소가 특정 방위에서 드러나 금장/중세 톤과 충돌했다.
+- 빌드 영향: `vite build`의 입력은 `rollupOptions.input` 미지정 시 `root/index.html` 하나뿐이라 `hero.html`과 `src/tools/`는 프로덕션 번들에 포함되지 않는다(`npm run build` 산출물 해시로 확인). 단 `npm run typecheck`(`tsc --build`) 대상에는 포함되므로 프로젝트 코딩 규약(`strict`, `any` 금지 등)을 그대로 따른다.
