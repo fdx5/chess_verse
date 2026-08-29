@@ -2,7 +2,6 @@
 export class TurnIndicator {
   readonly el: HTMLDivElement;
   private readonly turnText: HTMLSpanElement;
-  private readonly drawCounter: HTMLSpanElement;
   private readonly elapsedTime: HTMLSpanElement;
 
   constructor() {
@@ -29,13 +28,10 @@ export class TurnIndicator {
     ].join(';');
     this.turnText = document.createElement('span');
     this.turnText.textContent = '백 차례';
-    this.drawCounter = document.createElement('span');
-    this.drawCounter.style.cssText = 'padding-left:12px;border-left:1px solid rgba(242,232,213,.3);font-size:12px;font-weight:500;color:#F0CE6A;white-space:nowrap;';
-    this.drawCounter.title = '백과 흑이 50턴을 완료하면 무승부입니다.';
     this.elapsedTime = document.createElement('span');
     this.elapsedTime.style.cssText = 'padding-left:12px;border-left:1px solid rgba(242,232,213,.3);font-size:12px;font-weight:500;color:#C8CDD3;white-space:nowrap;';
     this.elapsedTime.textContent = '경과시간 00분00초';
-    this.el.append(this.turnText, this.drawCounter, this.elapsedTime);
+    this.el.append(this.turnText, this.elapsedTime);
   }
 
   setMobile(mobile: boolean): void {
@@ -55,7 +51,7 @@ export class TurnIndicator {
         'color:#F2E8D5',
         'font:600 clamp(13px,1.4vw,15px)/1.25 system-ui,sans-serif',
         'display:grid',
-        'grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.25fr)',
+        'grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)',
         'align-items:center',
         'gap:0',
         'text-align:center',
@@ -64,7 +60,6 @@ export class TurnIndicator {
         'user-select:none',
       ].join(';');
       this.turnText.style.cssText = 'min-width:0;white-space:normal;overflow-wrap:anywhere;';
-      this.drawCounter.style.cssText = 'min-width:0;padding:0 5px;border-left:1px solid rgba(242,232,213,.3);font-size:clamp(11px,1.15vw,13px);font-weight:500;color:#F0CE6A;white-space:normal;';
       this.elapsedTime.style.cssText = 'min-width:0;padding-left:5px;border-left:1px solid rgba(242,232,213,.3);font-size:clamp(11px,1.15vw,13px);font-weight:500;color:#C8CDD3;white-space:normal;';
       return;
     }
@@ -76,16 +71,11 @@ export class TurnIndicator {
       'align-items:center', 'gap:12px', 'letter-spacing:0.02em', 'pointer-events:none', 'user-select:none',
     ].join(';');
     this.turnText.style.cssText = '';
-    this.drawCounter.style.cssText = 'padding-left:12px;border-left:1px solid rgba(242,232,213,.3);font-size:12px;font-weight:500;color:#F0CE6A;white-space:nowrap;';
     this.elapsedTime.style.cssText = 'padding-left:12px;border-left:1px solid rgba(242,232,213,.3);font-size:12px;font-weight:500;color:#C8CDD3;white-space:nowrap;';
   }
 
   setText(text: string): void {
     this.turnText.textContent = text;
-  }
-
-  setDrawTurnsRemaining(turns: number): void {
-    this.drawCounter.textContent = `남은 턴수 ${Math.max(0, turns)}턴`;
   }
 
   setElapsedSeconds(totalSeconds: number): void {

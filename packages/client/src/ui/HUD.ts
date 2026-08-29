@@ -99,7 +99,6 @@ export class HUD {
   }
 
   setTurnText(text: string): void { this.turnIndicator.setText(text); }
-  setDrawTurnsRemaining(turns: number): void { this.turnIndicator.setDrawTurnsRemaining(turns); }
   setElapsedSeconds(seconds: number): void { this.turnIndicator.setElapsedSeconds(seconds); }
   pushMove(san: string, color: Color): void { this.moveList.push(san, color); }
   resetMoveList(): void { this.moveList.clear(); }

@@ -276,13 +276,11 @@ function refreshTurnStatusText(): void {
   if (currentConfig?.source === 'online') {
     if (onlineSession === null) return;
     hud.setTurnText(onlineSession.getPosition().turn === onlineMyColor ? '내 차례' : '상대 차례');
-    hud.setDrawTurnsRemaining(Math.max(0, 51 - onlineSession.getPosition().fullmoveNumber));
     return;
   }
   if (hotSeat !== null) {
     hud.setTurnText(hotSeat.getStatusText());
     const position = matchController?.getSession().getPosition();
-    if (position !== undefined) hud.setDrawTurnsRemaining(Math.max(0, 51 - position.fullmoveNumber));
   }
 }
 
@@ -304,7 +302,6 @@ function bindSessionEvents(session: GameSession, config: MatchConfig, generation
     const captured = capturedPieceOf(move, prevPosition);
     if (captured !== null) hud.recordCapture(prevPosition.turn, captured.type);
     inputLocked = true;
-    hud.setDrawTurnsRemaining(Math.max(0, 51 - session.getPosition().fullmoveNumber));
 
     const isCapture = (move.flags & MoveFlag.CAPTURE) !== 0;
     if (isCapture) {
@@ -565,7 +562,6 @@ function bindOnlineSessionEvents(session: GameSession): void {
     const captured = capturedPieceOf(move, prevPosition);
     if (captured !== null) hud.recordCapture(prevPosition.turn, captured.type);
     inputLocked = true;
-    hud.setDrawTurnsRemaining(Math.max(0, 51 - session.getPosition().fullmoveNumber));
 
     if (lastMoveWasLocalInput && onlineMatchId !== null && netClient !== null) {
       lastMoveWasLocalInput = false;
