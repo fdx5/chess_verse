@@ -73,11 +73,21 @@ export class HistoryClient {
 
   async saveGuestbookEntry(identity: PlayerIdentity, message: string): Promise<GuestbookEntryDto> {
     const res = await fetch(`${this.baseUrl}/api/v1/guestbook`, {
-      method: 'PUT',
+      method: 'POST',
       headers: { 'content-type': 'application/json', ...this.authHeaders(identity) },
       body: JSON.stringify({ message }),
     });
-    if (!res.ok) throw new Error(`saveGuestbookEntry failed: ${res.status}`);
+    if (!res.ok) throw new Error(res.status === 429 ? 'DAILY_LIMIT_REACHED' : `saveGuestbookEntry failed: ${res.status}`);
+    return (await res.json()) as GuestbookEntryDto;
+  }
+
+  async updateGuestbookEntry(identity: PlayerIdentity, entryId: string, message: string): Promise<GuestbookEntryDto> {
+    const res = await fetch(`${this.baseUrl}/api/v1/guestbook/${encodeURIComponent(entryId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', ...this.authHeaders(identity) },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) throw new Error(`updateGuestbookEntry failed: ${res.status}`);
     return (await res.json()) as GuestbookEntryDto;
   }
 

@@ -147,7 +147,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE,OPTIONS',
       'access-control-allow-headers': 'content-type,x-bcr-player-id,x-bcr-player-secret',
     });
     res.end();
@@ -188,7 +188,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
       return true;
     }
 
-    if (url.pathname === '/api/v1/guestbook' && req.method === 'PUT') {
+    if (url.pathname === '/api/v1/guestbook' && req.method === 'POST') {
       if (!checkRateLimit(`guestbook:${ip}`, 10)) {
         sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
         return true;
@@ -209,7 +209,43 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
         sendJson(res, 400, { error: 'INVALID_MESSAGE' }, req);
         return true;
       }
-      sendJson(res, 200, await deps.playerRepo.upsertGuestbook(auth.playerId, message), req);
+      const now = new Date();
+      const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+      const dayStart = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000;
+      const entry = await deps.playerRepo.createGuestbookEntry(auth.playerId, message, dayStart);
+      if (entry === null) {
+        sendJson(res, 429, { error: 'DAILY_LIMIT_REACHED' }, req);
+        return true;
+      }
+      sendJson(res, 201, entry, req);
+      return true;
+    }
+
+    const guestbookEntryMatch = url.pathname.match(/^\/api\/v1\/guestbook\/([^/]+)$/);
+    if (guestbookEntryMatch !== null && req.method === 'PATCH') {
+      const auth = await authenticate(req, deps);
+      if (auth === null) {
+        sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
+        return true;
+      }
+      const body = await readBody(req, MAX_IDENTIFY_BODY_BYTES);
+      if (body === null) {
+        sendJson(res, 413, { error: 'PAYLOAD_TOO_LARGE' }, req);
+        return true;
+      }
+      const parsed = JSON.parse(body) as { message?: unknown };
+      const message = typeof parsed.message === 'string' ? parsed.message.replace(/[\r\n]+/g, ' ').trim() : '';
+      if (message.length < 1 || message.length > 80) {
+        sendJson(res, 400, { error: 'INVALID_MESSAGE' }, req);
+        return true;
+      }
+      const entryId = guestbookEntryMatch[1];
+      const entry = entryId === undefined ? null : await deps.playerRepo.updateGuestbookEntry(auth.playerId, decodeURIComponent(entryId), message);
+      if (entry === null) {
+        sendJson(res, 404, { error: 'NOT_FOUND' }, req);
+        return true;
+      }
+      sendJson(res, 200, entry, req);
       return true;
     }
 

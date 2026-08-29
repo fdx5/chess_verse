@@ -93,5 +93,16 @@ export async function applyMigrations(client: Client): Promise<void> {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_guestbook_updated ON guestbook_entries(updated_at DESC);
+    CREATE TABLE IF NOT EXISTS guestbook_messages (
+      id         TEXT PRIMARY KEY,
+      player_id  TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+      message    TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 80),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_guestbook_messages_updated ON guestbook_messages(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_guestbook_messages_daily ON guestbook_messages(player_id, created_at);
+    INSERT OR IGNORE INTO guestbook_messages (id, player_id, message, created_at, updated_at)
+      SELECT 'legacy-' || player_id, player_id, message, created_at, updated_at FROM guestbook_entries;
   `);
 }

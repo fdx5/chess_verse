@@ -18,6 +18,7 @@ export class GuestbookScreen {
   private readonly input: HTMLInputElement;
   private readonly submitButton: HTMLButtonElement;
   private readonly statusEl: HTMLDivElement;
+  private editingEntryId: string | null = null;
 
   constructor(
     container: HTMLElement,
@@ -73,7 +74,7 @@ export class GuestbookScreen {
     const identity = this.getIdentity();
     this.input.disabled = identity === null;
     this.submitButton.disabled = identity === null;
-    this.statusEl.textContent = identity === null ? '방문록을 남기려면 먼저 플레이어 ID를 만들어주세요.' : '사용자 ID당 한 줄만 저장되며, 다시 남기면 기존 글이 수정됩니다.';
+    this.statusEl.textContent = identity === null ? '방문록을 남기려면 먼저 플레이어 ID를 만들어주세요.' : '사용자 ID당 하루 최대 5건까지 작성할 수 있습니다.';
     await this.refresh();
   }
 
@@ -86,12 +87,20 @@ export class GuestbookScreen {
     this.submitButton.disabled = true;
     this.statusEl.textContent = '저장 중...';
     try {
-      await this.client.saveGuestbookEntry(identity, message);
+      if (this.editingEntryId === null) {
+        await this.client.saveGuestbookEntry(identity, message);
+      } else {
+        await this.client.updateGuestbookEntry(identity, this.editingEntryId, message);
+      }
       this.input.value = '';
-      this.statusEl.textContent = '방문록이 저장되었습니다.';
+      this.statusEl.textContent = this.editingEntryId === null ? '방문록이 저장되었습니다.' : '방문록이 수정되었습니다.';
+      this.editingEntryId = null;
+      this.submitButton.textContent = '남기기';
       await this.refresh();
-    } catch {
-      this.statusEl.textContent = '저장하지 못했습니다. 잠시 후 다시 시도해주세요.';
+    } catch (error) {
+      this.statusEl.textContent = error instanceof Error && error.message === 'DAILY_LIMIT_REACHED'
+        ? '오늘 작성 가능한 5건을 모두 사용했습니다.'
+        : '저장하지 못했습니다. 잠시 후 다시 시도해주세요.';
     } finally {
       this.submitButton.disabled = false;
     }
@@ -119,7 +128,7 @@ export class GuestbookScreen {
 
   private buildEntry(entry: GuestbookEntryDto): HTMLDivElement {
     const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:minmax(90px,140px) 1fr auto;align-items:center;gap:10px;padding:11px 13px;border:1px solid rgba(107,74,47,.45);border-radius:9px;background:rgba(26,20,13,.6);';
+    row.style.cssText = 'display:grid;grid-template-columns:minmax(90px,140px) 1fr auto auto;align-items:center;gap:10px;padding:11px 13px;border:1px solid rgba(107,74,47,.45);border-radius:9px;background:rgba(26,20,13,.6);';
     const nickname = document.createElement('strong');
     nickname.textContent = entry.nickname;
     nickname.title = entry.playerId;
@@ -132,6 +141,22 @@ export class GuestbookScreen {
     date.textContent = formatDate(entry.updatedAt);
     date.style.cssText = 'font-size:11px;opacity:.55;white-space:nowrap;';
     row.append(nickname, message, date);
+    if (entry.playerId === this.getIdentity()?.playerId) {
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.textContent = '수정';
+      edit.style.cssText = 'padding:5px 9px;border-radius:6px;border:1px solid ' + GOLD + ';background:rgba(212,175,55,.12);color:' + GOLD_BRIGHT + ';font-size:11px;font-weight:700;cursor:pointer;';
+      edit.addEventListener('click', () => {
+        this.editingEntryId = entry.id;
+        this.input.value = entry.message;
+        this.submitButton.textContent = '수정 완료';
+        this.statusEl.textContent = '내 방문록을 수정 중입니다.';
+        this.input.focus();
+      });
+      row.appendChild(edit);
+    } else {
+      row.appendChild(document.createElement('span'));
+    }
     return row;
   }
 }

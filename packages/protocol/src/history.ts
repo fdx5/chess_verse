@@ -165,6 +165,7 @@ export interface LeaderboardPageDto {
 
 // ── 방명록 ────────────────────────────────────────────────────────────────
 export interface GuestbookEntryDto {
+  id: string;
   playerId: string;
   nickname: string;
   message: string;

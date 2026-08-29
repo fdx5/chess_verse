@@ -75,7 +75,7 @@ async function identify(playerId: string, nickname: string, secret: string): Pro
 }
 
 describe('D10-10 §1 왕복 통합 테스트', () => {
-  it('방문록은 인증된 사용자 ID당 한 줄만 저장되고 재작성 시 수정된다', async () => {
+  it('방문록은 사용자 ID당 하루 5건까지 저장되고 본인 글을 수정할 수 있다', async () => {
     const playerId = 'guestbook-player-1';
     const secret = 'guestbook-secret-1';
     await identify(playerId, '방문자', secret);
@@ -85,24 +85,49 @@ describe('D10-10 §1 왕복 통합 테스트', () => {
       'x-bcr-player-secret': secret,
     };
 
-    const first = await fetch(`${baseUrl}/api/v1/guestbook`, {
-      method: 'PUT', headers, body: JSON.stringify({ message: '첫 방문입니다!' }),
+    let firstEntryId = '';
+    for (let index = 0; index < 5; index += 1) {
+      const created = await fetch(`${baseUrl}/api/v1/guestbook`, {
+        method: 'POST', headers, body: JSON.stringify({ message: `${index + 1}번째 방문입니다!` }),
+      });
+      expect(created.status).toBe(201);
+      const entry = (await created.json()) as { id: string };
+      if (index === 0) firstEntryId = entry.id;
+    }
+    const overLimit = await fetch(`${baseUrl}/api/v1/guestbook`, {
+      method: 'POST', headers, body: JSON.stringify({ message: '여섯 번째 글' }),
     });
-    expect(first.status).toBe(200);
+    expect(overLimit.status).toBe(429);
+
     const updated = await fetch(`${baseUrl}/api/v1/guestbook`, {
-      method: 'PUT', headers, body: JSON.stringify({ message: '다시 놀러왔어요.' }),
+      method: 'PATCH', headers, body: JSON.stringify({ message: '첫 댓글을 수정했어요.' }),
     });
-    expect(updated.status).toBe(200);
+    expect(updated.status).toBe(404);
+    const ownedUpdate = await fetch(`${baseUrl}/api/v1/guestbook/${firstEntryId}`, {
+      method: 'PATCH', headers, body: JSON.stringify({ message: '첫 댓글을 수정했어요.' }),
+    });
+    expect(ownedUpdate.status).toBe(200);
+    await identify('guestbook-intruder', '다른방문자', 'intruder-secret');
+    const foreignUpdate = await fetch(`${baseUrl}/api/v1/guestbook/${firstEntryId}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-bcr-player-id': 'guestbook-intruder',
+        'x-bcr-player-secret': 'intruder-secret',
+      },
+      body: JSON.stringify({ message: '남의 글 수정' }),
+    });
+    expect(foreignUpdate.status).toBe(404);
 
     const list = await fetch(`${baseUrl}/api/v1/guestbook`);
     const page = (await list.json()) as { entries: Array<{ playerId: string; nickname: string; message: string }> };
-    expect(page.entries).toHaveLength(1);
-    expect(page.entries[0]).toMatchObject({ playerId, nickname: '방문자', message: '다시 놀러왔어요.' });
+    expect(page.entries).toHaveLength(5);
+    expect(page.entries.some((entry) => entry.playerId === playerId && entry.nickname === '방문자' && entry.message === '첫 댓글을 수정했어요.')).toBe(true);
   });
 
   it('방문록 작성은 인증 없이 허용하지 않는다', async () => {
     const response = await fetch(`${baseUrl}/api/v1/guestbook`, {
-      method: 'PUT',
+      method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ message: '인증 없는 글' }),
     });
