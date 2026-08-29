@@ -1333,7 +1333,7 @@ export class CombatDirector {
     // 공격자 회전 및 본 자세 복원
     const attackerUnit = this.unitBoard.getUnitAt(attackerSquare);
     if (attackerUnit !== undefined) {
-      attackerUnit.root.rotation.set(0, 0, 0);
+      this.unitBoard.restoreFacingAt(attackerSquare);
       const shoulderR = attackerUnit.bones['shoulder.R'];
       if (shoulderR !== undefined) shoulderR.rotation.set(0, 0, 0);
       const elbowR = attackerUnit.bones['elbow.R'];

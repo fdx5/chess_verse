@@ -17,6 +17,11 @@ import { MOVEMENT_PROFILES } from '../anim/movementClips';
 
 const BOARD_HALF = 4.0;
 
+/** 백은 +Z(흑 진영), 흑은 -Z(백 진영)를 향한다. */
+export function facingRotationY(color: Color): number {
+  return color === 'w' ? 0 : Math.PI;
+}
+
 // 사용자 요청 — 다리가 있는 기물(Pawn/Knight/King)은 이동 중 걷는 것처럼 다리를 움직인다.
 // 이동 소요시간(초 단위, 칸수와 무관하게 고정된 보폭 주기)에 맞춰 넓적다리를 좌우 교대로
 // 흔들고 앞으로 나가는 쪽 무릎을 굽힌다. Bishop(부유)·Rook(석탑)·Queen(드레스로 다리가 가려짐)은
@@ -87,6 +92,7 @@ interface ActiveMove {
  */
 export class UnitBoard {
   private readonly unitsBySquare = new Map<Square, UnitInstance>();
+  private readonly unitColors = new WeakMap<UnitInstance, Color>();
   private readonly activeMoves: ActiveMove[] = [];
   private readonly highlightGroup = new THREE.Group();
   private readonly dotGeom: THREE.BufferGeometry;
@@ -126,7 +132,8 @@ export class UnitBoard {
     const instance = this.unitFactory.create(type, color, this.quality);
     const [x, z] = squareToWorld(square);
     instance.root.position.set(x, 0, z);
-    if (color === 'b') instance.root.rotation.y = Math.PI;
+    this.unitColors.set(instance, color);
+    this.restoreUnitFacing(instance);
     instance.root.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.castShadow = true;
@@ -163,6 +170,19 @@ export class UnitBoard {
     this.unitsBySquare.set(to, unit);
     const [x, z] = squareToWorld(to);
     unit.root.position.set(x, 0, z);
+    this.restoreUnitFacing(unit);
+  }
+
+  /** 전투 연출 등에서 임시 변경된 루트 회전을 진영의 정면 방향으로 되돌린다. */
+  restoreFacingAt(square: Square): void {
+    const unit = this.unitsBySquare.get(square);
+    if (unit !== undefined) this.restoreUnitFacing(unit);
+  }
+
+  private restoreUnitFacing(unit: UnitInstance): void {
+    const color = this.unitColors.get(unit);
+    if (color === undefined) return;
+    unit.root.rotation.set(0, facingRotationY(color), 0);
   }
 
   private removeAt(square: Square): void {
@@ -247,6 +267,7 @@ export class UnitBoard {
       if (t >= 1) {
         if (LEGGED_PIECE_TYPES.has(move.type)) resetWalkCycle(move.unit);
         setPedestalStanding(move.unit, true);
+        this.restoreUnitFacing(move.unit);
         this.activeMoves.splice(i, 1);
       }
     }
