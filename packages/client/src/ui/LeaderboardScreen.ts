@@ -7,6 +7,8 @@ const GOLD = '#D4AF37';
 const GOLD_BRIGHT = '#F0CE6A';
 const PARCHMENT = '#F2E8D5';
 const WOOD_BORDER = '#6B4A2F';
+const VISIBLE_ROW_COUNT = 10;
+const ROW_GAP_PX = 10;
 
 const DIFFICULTIES: readonly { key: Difficulty; label: string; icon: string }[] = [
   { key: 'beginner', label: '초급', icon: '🌱' },
@@ -110,7 +112,7 @@ export class LeaderboardScreen {
 
     // Scrollable Content Area
     this.contentEl = document.createElement('div');
-    this.contentEl.style.cssText = 'display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1;min-height:280px;padding-right:4px;';
+    this.contentEl.style.cssText = 'display:flex;flex-direction:column;gap:10px;overflow:hidden;flex:1;min-height:0;padding-right:4px;';
     panel.appendChild(this.contentEl);
 
     // Footer with Current Player ID reminder & Close button
@@ -205,6 +207,29 @@ export class LeaderboardScreen {
     }
   }
 
+  private createScrollableList(): HTMLDivElement {
+    const list = document.createElement('div');
+    list.style.cssText = [
+      'display:flex',
+      'flex-direction:column',
+      `gap:${ROW_GAP_PX}px`,
+      'overflow-y:auto',
+      'min-height:0',
+      'scrollbar-gutter:stable',
+      'padding-right:4px',
+    ].join(';');
+    return list;
+  }
+
+  private limitListToVisibleRows(list: HTMLDivElement): void {
+    const rows = Array.from(list.children).slice(0, VISIBLE_ROW_COUNT) as HTMLElement[];
+    if (list.children.length <= VISIBLE_ROW_COUNT || rows.length === 0) return;
+
+    const visibleHeight = rows.reduce((height, row) => height + row.getBoundingClientRect().height, 0)
+      + ROW_GAP_PX * (rows.length - 1);
+    list.style.maxHeight = `${Math.ceil(visibleHeight)}px`;
+  }
+
   private async renderHistoryTab(): Promise<void> {
     await this.renderPublicHistoryTab();
     return;
@@ -292,6 +317,8 @@ export class LeaderboardScreen {
       this.contentEl.appendChild(empty);
       return;
     }
+    const list = this.createScrollableList();
+    this.contentEl.appendChild(list);
     for (const match of matches) {
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border:1px solid rgba(107,74,47,0.4);border-radius:10px;background:rgba(26,20,13,0.6);';
@@ -309,8 +336,9 @@ export class LeaderboardScreen {
       score.textContent = `${match.scoreWhite} : ${match.scoreBlack}`;
       score.style.cssText = 'font:700 18px ui-monospace,monospace;color:' + GOLD_BRIGHT + ';';
       row.append(info, score);
-      this.contentEl.appendChild(row);
+      list.appendChild(row);
     }
+    this.limitListToVisibleRows(list);
   }
 
   private async renderLeaderboardTab(difficulty: Difficulty): Promise<void> {
@@ -393,10 +421,13 @@ export class LeaderboardScreen {
     thead.innerHTML = '<span>순위</span><span>플레이어 ID</span><span style="text-align:center">승리 시간</span><span style="text-align:center">피해 기물</span><span style="text-align:right">최종 점수</span>';
     this.contentEl.appendChild(thead);
 
+    const list = this.createScrollableList();
+    this.contentEl.appendChild(list);
     for (const entry of allEntries) {
       const isMe = (myPlayerId && entry.playerId === myPlayerId) || entry.nickname === myNickname;
-      this.contentEl.appendChild(this.buildLeaderboardRow(entry, isMe));
+      list.appendChild(this.buildLeaderboardRow(entry, isMe));
     }
+    this.limitListToVisibleRows(list);
   }
 
   private buildLeaderboardRow(entry: LeaderboardEntryDto, isMe: boolean): HTMLDivElement {

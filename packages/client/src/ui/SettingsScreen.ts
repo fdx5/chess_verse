@@ -32,7 +32,8 @@ export class SettingsScreen {
       'justify-content:center',
       'background:rgba(0,0,0,0.55)',
       'pointer-events:auto',
-      'z-index:20',
+      // Must stay above the main menu (z-index:30) as well as the in-game HUD.
+      'z-index:50',
     ].join(';');
 
     const panel = document.createElement('div');
