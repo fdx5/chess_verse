@@ -104,7 +104,7 @@ export class UnitBoard {
     scene.add(this.highlightGroup);
     this.dotGeom = new THREE.CircleGeometry(0.09, 20);
     this.ringGeom = new THREE.RingGeometry(0.32, 0.4, 24);
-    this.dotMat = new THREE.MeshBasicMaterial({ color: '#F2E8D5', transparent: true, opacity: 0.85, depthWrite: false });
+    this.dotMat = new THREE.MeshBasicMaterial({ color: '#0057E7', transparent: true, opacity: 0.96, depthWrite: false });
     this.ringMat = new THREE.MeshBasicMaterial({ color: '#D4535A', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
   }
 
