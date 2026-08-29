@@ -34,6 +34,7 @@ export class MainMenu {
     onStart: (config: MatchConfig) => void,
     onOpenSettings: () => void,
     onOpenLeaderboard: () => void,
+    onOpenGuestbook: () => void,
     bgmPlayer: YoutubeBgmPlayer,
     onChangeIdentity?: () => void,
     onContinue?: () => void
@@ -72,7 +73,7 @@ export class MainMenu {
     ].join(';');
     this.el.appendChild(card);
 
-    card.appendChild(this.buildToolbar(onOpenLeaderboard, onOpenSettings, bgmPlayer, onChangeIdentity));
+    card.appendChild(this.buildToolbar(onOpenLeaderboard, onOpenGuestbook, onOpenSettings, bgmPlayer, onChangeIdentity));
     card.appendChild(this.buildTitleBlock());
 
     const modeSection = this.buildSection(
@@ -139,12 +140,13 @@ export class MainMenu {
 
   private buildToolbar(
     onOpenLeaderboard: () => void,
+    onOpenGuestbook: () => void,
     onOpenSettings: () => void,
     bgmPlayer: YoutubeBgmPlayer,
     onChangeIdentity?: () => void
   ): HTMLDivElement {
     const row = document.createElement('div');
-    row.style.cssText = 'position:relative;display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;';
+    row.style.cssText = 'position:relative;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:2px;';
 
     // Left: Player Profile Badge & Switch ID Button
     const playerBox = document.createElement('div');
@@ -202,6 +204,13 @@ export class MainMenu {
     });
     leaderboardBtn.addEventListener('click', onOpenLeaderboard);
     btnBox.appendChild(leaderboardBtn);
+
+    const guestbookBtn = document.createElement('button');
+    guestbookBtn.innerHTML = '<span aria-hidden="true">📜</span> <span>방문록</span>';
+    guestbookBtn.title = '한줄 방문록 보기 및 남기기';
+    guestbookBtn.style.cssText = 'display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:20px;border:1px solid rgba(212,175,55,.65);background:rgba(0,0,0,.25);color:' + PARCHMENT + ';font:600 12px system-ui,sans-serif;cursor:pointer;white-space:nowrap;';
+    guestbookBtn.addEventListener('click', onOpenGuestbook);
+    btnBox.appendChild(guestbookBtn);
 
     const settingsBtn = this.buildIconButton('⚙️', '설정');
     settingsBtn.addEventListener('click', onOpenSettings);

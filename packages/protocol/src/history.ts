@@ -163,6 +163,23 @@ export interface LeaderboardPageDto {
   totalCount: number;
 }
 
+// ── 방명록 ────────────────────────────────────────────────────────────────
+export interface GuestbookEntryDto {
+  playerId: string;
+  nickname: string;
+  message: string;
+  updatedAt: number;
+}
+
+export interface GuestbookPageDto {
+  entries: GuestbookEntryDto[];
+  totalCount: number;
+}
+
+export interface GuestbookUpsertRequestDto {
+  message: string;
+}
+
 // ── POST /api/v1/players/check-nickname ───────────────────────────────────
 export interface CheckNicknameRequestDto {
   nickname: string;

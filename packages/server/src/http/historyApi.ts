@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import type { IdentifyRequestDto, SyncMatchDto, SyncRequestDto, SyncUploadResult } from '@battle-chess/protocol';
 import type { PlayerRepository } from '../db/PlayerRepository.js';
 import type { MatchRepository } from '../db/MatchRepository.js';
@@ -37,7 +37,9 @@ function sendJson(res: ServerResponse, status: number, body: unknown, req?: Inco
   const headers: Record<string, string | number> = {
     'content-type': 'application/json; charset=utf-8',
     'access-control-allow-origin': '*',
-    'cache-control': 'public, max-age=0, must-revalidate',
+    'cache-control': req?.headers['x-bcr-player-id'] === undefined
+      ? 'public, max-age=0, must-revalidate'
+      : 'private, max-age=0, must-revalidate',
     ETag: etag,
     Vary: 'Accept-Encoding',
   };
@@ -49,6 +51,19 @@ function sendJson(res: ServerResponse, status: number, body: unknown, req?: Inco
   }
 
   const acceptEncoding = (req?.headers['accept-encoding'] ?? '') as string;
+  if (jsonBuf.length > 512 && acceptEncoding.includes('br')) {
+    try {
+      const compressed = brotliCompressSync(jsonBuf);
+      headers['content-encoding'] = 'br';
+      headers['content-length'] = compressed.length;
+      res.writeHead(status, headers);
+      res.end(compressed);
+      return;
+    } catch {
+      // Fall through to gzip or the uncompressed response.
+    }
+  }
+
   if (jsonBuf.length > 512 && acceptEncoding.includes('gzip')) {
     try {
       const gzipped = gzipSync(jsonBuf, { level: 6 });
@@ -132,7 +147,7 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
       'access-control-allow-headers': 'content-type,x-bcr-player-id,x-bcr-player-secret',
     });
     res.end();
@@ -164,6 +179,37 @@ export async function handleHistoryApiRequest(req: IncomingMessage, res: ServerR
       const limit = Number(url.searchParams.get('limit') ?? 50);
       const entries = await deps.historyQueries.getLeaderboard(difficulty, limit);
       sendJson(res, 200, { difficulty, entries, totalCount: entries.length }, req);
+      return true;
+    }
+
+    if (url.pathname === '/api/v1/guestbook' && req.method === 'GET') {
+      const limit = Number(url.searchParams.get('limit') ?? 100);
+      sendJson(res, 200, await deps.playerRepo.listGuestbook(limit), req);
+      return true;
+    }
+
+    if (url.pathname === '/api/v1/guestbook' && req.method === 'PUT') {
+      if (!checkRateLimit(`guestbook:${ip}`, 10)) {
+        sendJson(res, 429, { error: 'RATE_LIMITED' }, req);
+        return true;
+      }
+      const auth = await authenticate(req, deps);
+      if (auth === null) {
+        sendJson(res, 401, { error: 'UNAUTHORIZED' }, req);
+        return true;
+      }
+      const body = await readBody(req, MAX_IDENTIFY_BODY_BYTES);
+      if (body === null) {
+        sendJson(res, 413, { error: 'PAYLOAD_TOO_LARGE' }, req);
+        return true;
+      }
+      const parsed = JSON.parse(body) as { message?: unknown };
+      const message = typeof parsed.message === 'string' ? parsed.message.replace(/[\r\n]+/g, ' ').trim() : '';
+      if (message.length < 1 || message.length > 80) {
+        sendJson(res, 400, { error: 'INVALID_MESSAGE' }, req);
+        return true;
+      }
+      sendJson(res, 200, await deps.playerRepo.upsertGuestbook(auth.playerId, message), req);
       return true;
     }
 

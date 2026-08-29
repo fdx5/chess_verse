@@ -51,6 +51,8 @@ npm run dev --workspace=packages/server
 
 `npm run build` 후 `npm start`로 단일 프로세스가 정적 클라이언트와 API/WebSocket을 같은 오리진에서 서빙합니다(별도 프론트엔드 호스팅 불필요). Render.com 등 Node 웹 서비스에 Build Command `npm install && npm run build`, Start Command `npm start`로 배포할 수 있습니다. Node 버전은 `.node-version`을 따릅니다.
 
+대용량 배경·3D 모델·효과음을 CDN이나 오브젝트 스토리지에서 제공하려면 빌드 시 `VITE_PUBLIC_ASSET_BASE_URL=https://cdn.example.com`을 설정하세요. `env/`, `models/`, `sound/` 경로를 `packages/client/public`과 동일하게 업로드하고 CORS를 허용하면 게임 품질은 그대로 유지하면서 앱 서버의 Outbound Bandwidth를 대부분 제거할 수 있습니다. 자산 URL에는 콘텐츠 해시가 자동으로 붙으므로 CDN에서는 1년 immutable 캐시를 적용해도 안전합니다.
+
 환경 변수(둘 다 선택):
 
 | 변수 | 기본값 | 설명 |

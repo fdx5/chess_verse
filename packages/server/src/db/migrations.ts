@@ -86,5 +86,12 @@ export async function applyMigrations(client: Client): Promise<void> {
   await client.executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_matches_leaderboard ON matches(source, result, cpu_difficulty, leaderboard_score DESC);
     CREATE INDEX IF NOT EXISTS idx_players_nickname ON players(nickname);
+    CREATE TABLE IF NOT EXISTS guestbook_entries (
+      player_id  TEXT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+      message    TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 80),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_guestbook_updated ON guestbook_entries(updated_at DESC);
   `);
 }

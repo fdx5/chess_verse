@@ -1,11 +1,12 @@
 import type { AudioGraph, AudioBusName } from './AudioGraph';
 import { playSample, type SampleHandle } from './SamplePlayer';
+import { publicAssetUrl } from '../assets/publicAssetUrl';
 
 type SynthFn = (context: AudioContext, destination: AudioNode) => void;
 
 /** 사용자가 지정한 mp3 샘플을 재생하는 큐로 등록한다(`/sound/*.mp3`, `packages/client/public/sound/`). */
 function sampleCue(fileName: string): SynthFn {
-  return (ctx, dest) => playSample(ctx, dest, `/sound/${fileName}`);
+  return (ctx, dest) => playSample(ctx, dest, publicAssetUrl(`/sound/${fileName}`));
 }
 
 // 사용자 요청 — 절차적으로 합성하던 기존 효과음(타격/디졸브/반짝임/스팅어/발소리)은 전부 제거하고
@@ -61,7 +62,7 @@ export class SoundRegistry {
    */
   playWalk(): void {
     this.walkHandle?.stop();
-    this.walkHandle = playSample(this.graph.context, this.graph.getBus('sfx'), '/sound/walk.mp3');
+    this.walkHandle = playSample(this.graph.context, this.graph.getBus('sfx'), publicAssetUrl('/sound/walk.mp3'));
   }
 
   stopWalk(): void {

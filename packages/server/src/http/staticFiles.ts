@@ -116,16 +116,47 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse, cli
 
   const ext = extname(targetPath).toLowerCase();
   const mime = MIME_TYPES[ext] ?? 'application/octet-stream';
+  const cacheControl = getCacheControl(pathname, isFallback);
 
   // 1. ETag & If-None-Match 304 처리 (대역폭 0 바이트 반환)
   const clientEtag = req.headers['if-none-match'];
   if (clientEtag !== undefined && clientEtag === file.etag) {
     res.writeHead(304, {
       ETag: file.etag,
-      'Cache-Control': getCacheControl(pathname, isFallback),
+      'Cache-Control': cacheControl,
     });
     res.end();
     return true;
+  }
+
+  // Allow interrupted model/media downloads to resume without retransferring
+  // the entire asset. Byte ranges are served from the raw representation.
+  const range = req.headers.range;
+  if (range !== undefined && (req.headers['if-range'] === undefined || req.headers['if-range'] === file.etag)) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (match !== null) {
+      const startText = match[1] ?? '';
+      const endText = match[2] ?? '';
+      let start = startText === '' ? Math.max(0, file.raw.length - Number(endText)) : Number(startText);
+      let end = endText === '' ? file.raw.length - 1 : Number(endText);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= file.raw.length || end < start) {
+        res.writeHead(416, { 'Content-Range': `bytes */${file.raw.length}`, ETag: file.etag, 'Cache-Control': cacheControl });
+        res.end();
+        return true;
+      }
+      end = Math.min(end, file.raw.length - 1);
+      const body = file.raw.subarray(start, end + 1);
+      res.writeHead(206, {
+        'Content-Type': mime,
+        'Content-Length': body.length,
+        'Content-Range': `bytes ${start}-${end}/${file.raw.length}`,
+        'Accept-Ranges': 'bytes',
+        ETag: file.etag,
+        'Cache-Control': cacheControl,
+      });
+      res.end(req.method === 'HEAD' ? undefined : body);
+      return true;
+    }
   }
 
   // 2. 압축 인코딩 결정 (Brotli 우선, Gzip 차선)
@@ -134,7 +165,8 @@ export async function serveStatic(req: IncomingMessage, res: ServerResponse, cli
   const headers: Record<string, string | number> = {
     'Content-Type': mime,
     ETag: file.etag,
-    'Cache-Control': getCacheControl(pathname, isFallback),
+    'Cache-Control': cacheControl,
+    'Accept-Ranges': 'bytes',
     Vary: 'Accept-Encoding',
   };
 

@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Client } from '@libsql/client';
+import type { GuestbookEntryDto, GuestbookPageDto } from '@battle-chess/protocol';
 
 interface PlayerRow {
   id: string;
@@ -109,6 +110,38 @@ export class PlayerRepository {
       nickname: String(row['nickname']),
       secret_hash: row['secret_hash'] !== null && row['secret_hash'] !== undefined ? String(row['secret_hash']) : null,
     };
+  }
+
+  async listGuestbook(limit = 100): Promise<GuestbookPageDto> {
+    const cappedLimit = Math.min(Math.max(Math.trunc(limit) || 100, 1), 100);
+    const result = await this.client.execute({
+      sql: `SELECT g.player_id, p.nickname, g.message, g.updated_at
+            FROM guestbook_entries g
+            JOIN players p ON p.id = g.player_id
+            ORDER BY g.updated_at DESC
+            LIMIT ?`,
+      args: [cappedLimit],
+    });
+    const entries: GuestbookEntryDto[] = result.rows.map((row) => ({
+      playerId: String(row['player_id']),
+      nickname: String(row['nickname']),
+      message: String(row['message']),
+      updatedAt: Number(row['updated_at']),
+    }));
+    return { entries, totalCount: entries.length };
+  }
+
+  /** player_id가 기본키이므로 사용자별 한 줄만 존재하며 재작성 시 기존 글을 수정한다. */
+  async upsertGuestbook(playerId: string, message: string): Promise<GuestbookEntryDto> {
+    const now = Date.now();
+    await this.client.execute({
+      sql: `INSERT INTO guestbook_entries (player_id, message, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(player_id) DO UPDATE SET message = excluded.message, updated_at = excluded.updated_at`,
+      args: [playerId, message, now, now],
+    });
+    const nickname = await this.getNickname(playerId);
+    return { playerId, nickname: nickname ?? '플레이어', message, updatedAt: now };
   }
 
   async deleteCascade(playerId: string): Promise<void> {

@@ -75,6 +75,40 @@ async function identify(playerId: string, nickname: string, secret: string): Pro
 }
 
 describe('D10-10 §1 왕복 통합 테스트', () => {
+  it('방문록은 인증된 사용자 ID당 한 줄만 저장되고 재작성 시 수정된다', async () => {
+    const playerId = 'guestbook-player-1';
+    const secret = 'guestbook-secret-1';
+    await identify(playerId, '방문자', secret);
+    const headers = {
+      'content-type': 'application/json',
+      'x-bcr-player-id': playerId,
+      'x-bcr-player-secret': secret,
+    };
+
+    const first = await fetch(`${baseUrl}/api/v1/guestbook`, {
+      method: 'PUT', headers, body: JSON.stringify({ message: '첫 방문입니다!' }),
+    });
+    expect(first.status).toBe(200);
+    const updated = await fetch(`${baseUrl}/api/v1/guestbook`, {
+      method: 'PUT', headers, body: JSON.stringify({ message: '다시 놀러왔어요.' }),
+    });
+    expect(updated.status).toBe(200);
+
+    const list = await fetch(`${baseUrl}/api/v1/guestbook`);
+    const page = (await list.json()) as { entries: Array<{ playerId: string; nickname: string; message: string }> };
+    expect(page.entries).toHaveLength(1);
+    expect(page.entries[0]).toMatchObject({ playerId, nickname: '방문자', message: '다시 놀러왔어요.' });
+  });
+
+  it('방문록 작성은 인증 없이 허용하지 않는다', async () => {
+    const response = await fetch(`${baseUrl}/api/v1/guestbook`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: '인증 없는 글' }),
+    });
+    expect(response.status).toBe(401);
+  });
+
   it('CPU 매치 1건을 업로드하면 히스토리 목록/상세로 동일 값을 조회할 수 있다', async () => {
     const playerId = 'player-round-1';
     const secret = 'secret-round-1';

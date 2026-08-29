@@ -47,9 +47,11 @@ import { MatchmakingScreen } from './ui/MatchmakingScreen';
 import { NicknameModal } from './ui/NicknameModal';
 import { HistoryScreen } from './ui/HistoryScreen';
 import { LeaderboardScreen } from './ui/LeaderboardScreen';
+import { GuestbookScreen } from './ui/GuestbookScreen';
 import { SavedGamesScreen } from './ui/SavedGamesScreen';
 import { PerfOverlay } from './ui/PerfOverlay';
 import { YoutubeBgmPlayer } from './audio/YoutubeBgmPlayer';
+import { publicAssetUrl } from './assets/publicAssetUrl';
 import { IndexedDbStore } from './persistence/IndexedDbStore';
 import type { SavedGameRecord } from './persistence/schema';
 import { MatchRecorder } from './persistence/MatchRecorder';
@@ -74,10 +76,10 @@ let tier: QualityTier = 'medium';
 const renderer = new GameRenderer(canvas, resolvePixelRatioCap(tier, isMobileDevice()));
 const scene = buildScene();
 const BACKGROUND_URLS = [
-  '/env/hdrmaps-049.jpg',
-  '/env/music-hall-01.jpg',
-  '/env/ballroom.jpg',
-  '/env/hdrmaps-160.jpg',
+  publicAssetUrl('/env/hdrmaps-049.jpg'),
+  publicAssetUrl('/env/music-hall-01.jpg'),
+  publicAssetUrl('/env/ballroom.jpg'),
+  publicAssetUrl('/env/hdrmaps-160.jpg'),
 ] as const;
 let currentBackgroundIndex = -1;
 let backgroundLoadQueue: Promise<void> = Promise.resolve();
@@ -127,12 +129,12 @@ const unitBoard = new UnitBoard(scene, unitFactory, animationRegistry, tier);
 // 실패해도 HybridUnitProvider가 절차적 생성으로 자동 폴백하므로 흐름을 막지 않는다.
 // 새 조각 기물이 추가될 때마다 이 목록에 한 줄만 추가하면 된다.
 const SCULPTED_UNIT_ASSETS: readonly { type: PieceType; url: string }[] = [
-  { type: 'b', url: '/models/bishop.glb' },
-  { type: 'n', url: '/models/knight.glb' },
-  { type: 'p', url: '/models/pawn.glb' },
-  { type: 'r', url: '/models/rook.glb' },
-  { type: 'q', url: '/models/queen.glb' },
-  { type: 'k', url: '/models/king.glb' },
+  { type: 'b', url: publicAssetUrl('/models/bishop.glb') },
+  { type: 'n', url: publicAssetUrl('/models/knight.glb') },
+  { type: 'p', url: publicAssetUrl('/models/pawn.glb') },
+  { type: 'r', url: publicAssetUrl('/models/rook.glb') },
+  { type: 'q', url: publicAssetUrl('/models/queen.glb') },
+  { type: 'k', url: publicAssetUrl('/models/king.glb') },
 ];
 const sculptedUnitsReady: Promise<void> = Promise.all(
   SCULPTED_UNIT_ASSETS.flatMap(({ type, url }) => [gltfUnitProvider.preload(type, 'w', url), gltfUnitProvider.preload(type, 'b', url)])
@@ -806,6 +808,7 @@ const leaderboardScreen = new LeaderboardScreen(
   () => syncEngine.syncNow(),
   () => mainMenu.show()
 );
+const guestbookScreen = new GuestbookScreen(app, historyClient, () => currentIdentity, () => mainMenu.show());
 const mainMenu = new MainMenu(
   app,
   handleStartFromMenu,
@@ -813,6 +816,10 @@ const mainMenu = new MainMenu(
   () => {
     mainMenu.hide();
     void leaderboardScreen.show('history');
+  },
+  () => {
+    mainMenu.hide();
+    void guestbookScreen.show();
   },
   bgmPlayer,
   () => {

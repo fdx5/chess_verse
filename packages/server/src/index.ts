@@ -22,6 +22,11 @@ const matchRepo = new MatchRepository(db);
 const historyQueries = new HistoryQueries(db);
 
 const httpServer = createServer((req, res) => {
+  if (req.url === '/healthz') {
+    res.writeHead(204, { 'cache-control': 'no-store' });
+    res.end();
+    return;
+  }
   void handleHistoryApiRequest(req, res, { playerRepo, matchRepo, historyQueries }).then(async (handled) => {
     if (handled) return;
     if (await serveStatic(req, res, CLIENT_DIST)) return;
@@ -46,8 +51,9 @@ httpServer.listen(PORT, () => {
 const selfPingUrl = process.env['RENDER_EXTERNAL_URL'];
 if (selfPingUrl !== undefined) {
   const SELF_PING_INTERVAL_MS = 5 * 60_000;
+  const healthUrl = new URL('/healthz', selfPingUrl).toString();
   setInterval(() => {
-    fetch(selfPingUrl).catch((err: unknown) => {
+    fetch(healthUrl).catch((err: unknown) => {
       console.warn('[server] self-ping failed', err);
     });
   }, SELF_PING_INTERVAL_MS);

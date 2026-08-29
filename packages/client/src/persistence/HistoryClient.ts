@@ -1,4 +1,4 @@
-import type { IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, PublicMatchLogPageDto, SyncMatchDto, SyncUploadResult } from '@battle-chess/protocol';
+import type { GuestbookEntryDto, GuestbookPageDto, IdentifyResponseDto, MatchDetailDto, MatchHistoryPage, PlayerStatsDto, PublicMatchLogPageDto, SyncMatchDto, SyncUploadResult } from '@battle-chess/protocol';
 import type { PlayerIdentity } from './identity';
 
 /** D10-6 §히스토리 REST 클라이언트 — 인증은 `X-BCR-Player-Id`/`X-BCR-Player-Secret` 헤더로. */
@@ -63,6 +63,22 @@ export class HistoryClient {
     const res = await fetch(`${this.baseUrl}/api/v1/leaderboard?difficulty=${difficulty}&limit=${limit}`);
     if (!res.ok) throw new Error(`fetchLeaderboard failed: ${res.status}`);
     return (await res.json()) as import('@battle-chess/protocol').LeaderboardPageDto;
+  }
+
+  async fetchGuestbook(limit = 100): Promise<GuestbookPageDto> {
+    const res = await fetch(`${this.baseUrl}/api/v1/guestbook?limit=${limit}`);
+    if (!res.ok) throw new Error(`fetchGuestbook failed: ${res.status}`);
+    return (await res.json()) as GuestbookPageDto;
+  }
+
+  async saveGuestbookEntry(identity: PlayerIdentity, message: string): Promise<GuestbookEntryDto> {
+    const res = await fetch(`${this.baseUrl}/api/v1/guestbook`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...this.authHeaders(identity) },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) throw new Error(`saveGuestbookEntry failed: ${res.status}`);
+    return (await res.json()) as GuestbookEntryDto;
   }
 
   /** 닉네임 중복 검사 */
