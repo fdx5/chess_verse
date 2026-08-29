@@ -124,8 +124,47 @@ export class MainMenu {
     this.continueBtn.textContent = '이어서 하기';
     this.continueBtn.style.display = 'none';
     card.appendChild(this.continueBtn);
+    card.appendChild(this.buildDeveloperFooter());
 
     container.appendChild(this.el);
+  }
+
+  private buildDeveloperFooter(): HTMLDivElement {
+    const footer = document.createElement('div');
+    footer.style.cssText = [
+      'display:flex',
+      'flex-wrap:wrap',
+      'align-items:center',
+      'justify-content:center',
+      'gap:5px 10px',
+      'margin-top:2px',
+      'padding:11px 14px',
+      'border-radius:10px',
+      'border:1px solid rgba(212,175,55,0.24)',
+      'background:rgba(8,6,4,0.34)',
+      'color:rgba(242,232,213,0.72)',
+      'font:500 12px/1.4 system-ui,sans-serif',
+      'text-align:center',
+    ].join(';');
+
+    const developer = document.createElement('span');
+    developer.textContent = 'Developed by TJ Choi';
+
+    const divider = document.createElement('span');
+    divider.textContent = '•';
+    divider.setAttribute('aria-hidden', 'true');
+    divider.style.color = 'rgba(212,175,55,0.55)';
+
+    const contact = document.createElement('a');
+    contact.href = 'mailto:fdx5555@naver.com';
+    contact.textContent = 'Contact: fdx5555@naver.com';
+    contact.title = 'TJ Choi에게 이메일 보내기';
+    contact.style.cssText = 'color:' + GOLD_BRIGHT + ';text-decoration:none;font-weight:600;overflow-wrap:anywhere;';
+    contact.addEventListener('mouseenter', () => (contact.style.textDecoration = 'underline'));
+    contact.addEventListener('mouseleave', () => (contact.style.textDecoration = 'none'));
+
+    footer.append(developer, divider, contact);
+    return footer;
   }
 
   setPlayerNickname(nickname: string): void {
