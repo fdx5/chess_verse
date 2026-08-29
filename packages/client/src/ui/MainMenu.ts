@@ -23,7 +23,7 @@ const WOOD_BORDER = '#6B4A2F';
 export class MainMenu {
   readonly el: HTMLDivElement;
   private mode: 'local2p' | 'cpu' | 'online' = 'cpu';
-  private format: 'bo1' | 'bo3' = 'bo3';
+  private format: 'bo1' | 'bo3' = 'bo1';
   private difficulty: Difficulty = 'intermediate';
   private difficultySection: HTMLDivElement;
   private playerBadgeText: HTMLSpanElement | null = null;
