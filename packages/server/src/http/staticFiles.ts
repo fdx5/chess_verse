@@ -100,7 +100,14 @@ async function getCachedFile(filePath: string): Promise<CachedFile | null> {
 export async function serveStatic(req: IncomingMessage, res: ServerResponse, clientDist: string): Promise<boolean> {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   const url = new URL(req.url ?? '/', 'http://internal');
-  const pathname = url.pathname === '/' ? '/index.html' : url.pathname;
+  // Serve nested static microsites through their conventional directory index.
+  // Without this, `/hellsing_story_v2/` misses the directory and incorrectly
+  // falls through to the main SPA shell.
+  const pathname = url.pathname === '/'
+    ? '/index.html'
+    : url.pathname.endsWith('/')
+      ? `${url.pathname}index.html`
+      : url.pathname;
   let targetPath = resolveSafePath(clientDist, pathname);
 
   let file = await getCachedFile(targetPath);
