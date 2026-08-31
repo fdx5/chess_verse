@@ -22,6 +22,15 @@ const matchRepo = new MatchRepository(db);
 const historyQueries = new HistoryQueries(db);
 
 const httpServer = createServer((req, res) => {
+  const requestUrl = new URL(req.url ?? '/', 'http://internal');
+  if ((req.method === 'GET' || req.method === 'HEAD') && requestUrl.pathname === '/') {
+    res.writeHead(302, {
+      location: `/hub${requestUrl.search}`,
+      'cache-control': 'no-store',
+    });
+    res.end();
+    return;
+  }
   if (req.url === '/healthz') {
     res.writeHead(204, { 'cache-control': 'no-store' });
     res.end();
